@@ -16,20 +16,20 @@ A modern web interface for [Elfeed](https://github.com/skeeto/elfeed), the Emacs
 Add `elfeed-web-ng` to your `load-path` and configure:
 
 ```elisp
-(require 'elfeed-web)
+(require 'elfeed-web-ng)
 
-(setq elfeed-web-saved-searches
+(setq elfeed-web-ng-saved-searches
   '((:label "Unread"    :filter "+unread")
     (:label "Starred"   :filter "+★")
     (:label "Later"     :filter "+later +unread")))
 
-(elfeed-web-start)
+(elfeed-web-ng-start)
 ```
 
 ### Configuration
 
-- `elfeed-web-saved-searches` — list of saved searches displayed as quick-access buttons
-- `elfeed-web-limit` — maximum entries per search (default: 512)
+- `elfeed-web-ng-saved-searches` — list of saved searches displayed as quick-access buttons
+- `elfeed-web-ng-limit` — maximum entries per search (default: 512)
 - `httpd-host` / `httpd-port` — server binding (from simple-httpd)
 
 ## Development
