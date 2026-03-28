@@ -44,7 +44,7 @@ export function EntryContent({ entry, onBack, onSearch }) {
         <iframe
           class="content-frame"
           src={contentUrl}
-          sandbox="allow-same-origin"
+          sandbox=""
           title="Entry content"
         />
       ) : (
