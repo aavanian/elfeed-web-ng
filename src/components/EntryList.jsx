@@ -24,7 +24,7 @@ export function EntryList({ onSelect, onSearch }) {
 
   return (
     <div>
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+      <div class="entry-list-header">
         <small class="secondary">{entryList.length} entries</small>
         <button class="outline secondary mark-all-read"
                 onClick={handleMarkAllRead}>

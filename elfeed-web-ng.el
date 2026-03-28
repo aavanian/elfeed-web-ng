@@ -130,9 +130,9 @@ Example: \\='((:label \"Unread\" :filter \"+unread\"))"
           (princ (concat
                   "<html><head><style>"
                   "body { background: #fdf6e3; color: #657b83; }"
+                  "a { color: #268bd2; }"
                   "@media (prefers-color-scheme: dark) {"
                   "  body { background: #002b36; color: #839496; }"
-                  "  a { color: #268bd2; }"
                   "}"
                   "</style></head><body>"
                   content
