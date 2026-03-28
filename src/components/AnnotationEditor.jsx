@@ -26,7 +26,7 @@ export function AnnotationEditor({ entry }) {
 
   if (!open) {
     return (
-      <button class="outline secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem; margin-top: 0.5rem;"
+      <button class="outline secondary annotation-toggle"
               onClick={() => setOpen(true)}>
         {entry.annotation ? 'Edit annotation' : 'Add annotation'}
       </button>

@@ -216,6 +216,12 @@ header h1 {
   min-height: 60vh;
 }
 
+.annotation-toggle {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  margin-top: 0.5rem;
+}
+
 /* Annotation editor */
 .annotation-editor {
   margin-top: 0.75rem;
@@ -230,6 +236,11 @@ header h1 {
   display: flex;
   gap: 0.5rem;
   margin-top: 0.25rem;
+}
+
+.annotation-editor .annotation-actions button {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
 }
 
 /* Loading */
