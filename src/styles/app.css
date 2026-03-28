@@ -53,7 +53,7 @@ header h1 {
 
 /* Saved searches */
 .saved-searches {
-  display: flex;
+  justify-content: flex-start;
   gap: 0.25rem;
   overflow-x: auto;
   padding-bottom: 0.5rem;
@@ -67,9 +67,8 @@ header h1 {
 
 .saved-searches button {
   white-space: nowrap;
-  padding: 0.25rem 0.75rem;
-  font-size: 0.8rem;
-  border-radius: 999px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
   margin: 0;
 }
 
@@ -92,6 +91,12 @@ header h1 {
 .search-bar button {
   white-space: nowrap;
   margin-bottom: 0;
+}
+
+.mark-all-read {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  margin: 0;
 }
 
 /* Entry list */
@@ -167,6 +172,8 @@ header h1 {
 
 .back-button {
   display: none;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
 }
 
 @media (max-width: 767px) {

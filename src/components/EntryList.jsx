@@ -26,7 +26,7 @@ export function EntryList({ onSelect, onSearch }) {
     <div>
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
         <small class="secondary">{entryList.length} entries</small>
-        <button class="outline secondary" style="font-size: 0.7rem; padding: 0.15rem 0.5rem; margin: 0;"
+        <button class="outline secondary mark-all-read"
                 onClick={handleMarkAllRead}>
           Mark all read
         </button>
