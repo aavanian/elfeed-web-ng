@@ -81,6 +81,12 @@ export async function getAnnotation(webid) {
   return res.json();
 }
 
+export async function feedUpdate() {
+  const res = await fetch(`${BASE}/feed-update`);
+  if (!res.ok) throw new Error(`Feed update failed: ${res.status}`);
+  return res.json();
+}
+
 export async function setAnnotation(webid, text) {
   if (!hasFeature('annotations')) return null;
   const res = await fetch(`${BASE}/annotation/${webid}`, {

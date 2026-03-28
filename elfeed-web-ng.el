@@ -128,9 +128,12 @@ Example: \\='((:label \"Unread\" :filter \"+unread\"))"
     (let ((content (elfeed-deref (elfeed-ref--create :id ref))))
       (if content
           (princ (concat
-                  "<html><head><style>"
+                  "<html><head>"
+                  "<meta charset=\"utf-8\">"
+                  "<style>"
                   "body { background: #fdf6e3; color: #657b83; }"
                   "a { color: #268bd2; }"
+                  "img { max-width: 100%; height: auto; }"
                   "@media (prefers-color-scheme: dark) {"
                   "  body { background: #002b36; color: #839496; }"
                   "}"
@@ -270,6 +273,12 @@ and empty string for GET."
        (t
         (princ (json-encode '(:error "method not allowed")))
         (httpd-send-header t "application/json" 405))))))
+
+(defservlet* elfeed/feed-update application/json ()
+  "Trigger an elfeed feed update."
+  (with-elfeed-web-ng
+    (elfeed-update)
+    (princ (json-encode '(:status "updating")))))
 
 (defservlet elfeed text/plain (uri-path _ request)
   "Serve static files from `elfeed-web-ng-data-root'."

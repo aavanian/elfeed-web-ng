@@ -70,12 +70,31 @@ export function App() {
     store.selectedEntry.value = null;
   }, []);
 
+  const onFeedUpdate = useCallback(async () => {
+    store.updating.value = true;
+    try {
+      await api.feedUpdate();
+      await doSearch(store.query.value);
+    } finally {
+      store.updating.value = false;
+    }
+  }, [doSearch]);
+
   const selected = store.selectedEntry.value;
+  const updating = store.updating.value;
 
   return (
     <main class="container-fluid">
       <header>
         <h1>Elfeed</h1>
+        <button
+          class="outline secondary update-feeds"
+          onClick={onFeedUpdate}
+          aria-busy={updating}
+          disabled={updating}
+        >
+          {updating ? 'Updating...' : 'Update feeds'}
+        </button>
       </header>
 
       <div class={`app-layout ${selected ? 'has-selection' : ''}`}>
