@@ -146,10 +146,6 @@ header h1 {
   color: var(--pico-secondary-inverse);
 }
 
-.annotation-indicator {
-  font-size: 0.7rem;
-}
-
 /* Entry content */
 .content-header {
   margin-bottom: 1rem;

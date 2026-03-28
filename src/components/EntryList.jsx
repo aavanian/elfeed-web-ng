@@ -8,10 +8,6 @@ function formatDate(ms) {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
-function visibleTags(tags) {
-  return tags.filter((t) => t !== 'unread');
-}
-
 export function EntryList({ onSelect, onSearch }) {
   const entryList = store.entries.value;
   const selected = store.selectedEntry.value;
@@ -55,12 +51,9 @@ export function EntryList({ onSelect, onSearch }) {
                 </div>
                 <div class="entry-title">{entry.title}</div>
                 <div class="entry-tags">
-                  {visibleTags(entry.tags || []).map((tag) => (
+                  {(entry.tags || []).map((tag) => (
                     <span key={tag} class="tag-badge">{tag}</span>
                   ))}
-                  {entry.annotation ? (
-                    <span class="annotation-indicator" title="Has annotation">&#x2B90;</span>
-                  ) : null}
                 </div>
               </li>
             );
