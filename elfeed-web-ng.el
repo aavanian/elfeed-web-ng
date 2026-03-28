@@ -280,7 +280,13 @@ and empty string for GET."
       (if (< (length uri-path) (length base))
           (httpd-redirect t base)
         (let ((path (substring uri-path (1- (length base)))))
-          (httpd-serve-root t elfeed-web-ng-data-root path request))))))
+          (if (or (string= path "/") (string= path "/index.html"))
+              (progn
+                (insert-file-contents
+                 (expand-file-name "index.html" elfeed-web-ng-data-root))
+                (httpd-send-header t "text/html" 200
+                                   :Cache-Control "no-cache, no-store, must-revalidate"))
+            (httpd-serve-root t elfeed-web-ng-data-root path request)))))))
 
 (defun httpd/favicon.ico (proc &rest _)
   "Redirect /favicon.ico to /elfeed/favicon.ico."
