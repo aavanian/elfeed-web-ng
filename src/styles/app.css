@@ -101,9 +101,16 @@ header h1 {
 
 /* Entry list */
 .entry-list {
-  list-style: none;
   padding: 0;
   margin: 0;
+}
+
+.entry-list li {
+  list-style-type: none;
+}
+
+.entry-list li::marker {
+  content: none;
 }
 
 .entry-item {
