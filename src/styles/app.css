@@ -1,8 +1,91 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
 
-:root {
+/* Solarized Light */
+:root:not([data-theme=dark]) {
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --pico-background-color: #fdf6e3;
+  --pico-color: #657b83;
+  --pico-muted-color: #93a1a1;
+  --pico-muted-border-color: #eee8d5;
+  --pico-card-background-color: #eee8d5;
+  --pico-primary: #268bd2;
+  --pico-primary-background: #268bd2;
+  --pico-primary-hover-background: #2176b3;
+  --pico-primary-focus: rgba(38, 139, 210, 0.25);
+  --pico-primary-inverse: #fdf6e3;
+  --pico-secondary: #93a1a1;
+  --pico-secondary-background: #93a1a1;
+  --pico-secondary-hover-background: #839496;
+  --pico-secondary-inverse: #fdf6e3;
+  --pico-contrast: #073642;
+  --pico-contrast-background: #073642;
+  --pico-contrast-hover-background: #002b36;
+  --pico-contrast-inverse: #fdf6e3;
+  --pico-form-element-background-color: #eee8d5;
+  --pico-form-element-border-color: #93a1a1;
+  --pico-form-element-color: #657b83;
+  --pico-form-element-placeholder-color: #93a1a1;
+  --pico-form-element-active-background-color: #eee8d5;
+  --pico-form-element-active-border-color: #268bd2;
+}
+
+/* Solarized Dark (auto via prefers-color-scheme) */
+@media only screen and (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --pico-background-color: #002b36;
+    --pico-color: #839496;
+    --pico-muted-color: #586e75;
+    --pico-muted-border-color: #073642;
+    --pico-card-background-color: #073642;
+    --pico-primary: #268bd2;
+    --pico-primary-background: #268bd2;
+    --pico-primary-hover-background: #2176b3;
+    --pico-primary-focus: rgba(38, 139, 210, 0.25);
+    --pico-primary-inverse: #002b36;
+    --pico-secondary: #586e75;
+    --pico-secondary-background: #586e75;
+    --pico-secondary-hover-background: #657b83;
+    --pico-secondary-inverse: #002b36;
+    --pico-contrast: #eee8d5;
+    --pico-contrast-background: #eee8d5;
+    --pico-contrast-hover-background: #fdf6e3;
+    --pico-contrast-inverse: #002b36;
+    --pico-form-element-background-color: #073642;
+    --pico-form-element-border-color: #586e75;
+    --pico-form-element-color: #839496;
+    --pico-form-element-placeholder-color: #586e75;
+    --pico-form-element-active-background-color: #073642;
+    --pico-form-element-active-border-color: #268bd2;
+  }
+}
+
+/* Solarized Dark (explicit) */
+[data-theme=dark] {
+  --pico-background-color: #002b36;
+  --pico-color: #839496;
+  --pico-muted-color: #586e75;
+  --pico-muted-border-color: #073642;
+  --pico-card-background-color: #073642;
+  --pico-primary: #268bd2;
+  --pico-primary-background: #268bd2;
+  --pico-primary-hover-background: #2176b3;
+  --pico-primary-focus: rgba(38, 139, 210, 0.25);
+  --pico-primary-inverse: #002b36;
+  --pico-secondary: #586e75;
+  --pico-secondary-background: #586e75;
+  --pico-secondary-hover-background: #657b83;
+  --pico-secondary-inverse: #002b36;
+  --pico-contrast: #eee8d5;
+  --pico-contrast-background: #eee8d5;
+  --pico-contrast-hover-background: #fdf6e3;
+  --pico-contrast-inverse: #002b36;
+  --pico-form-element-background-color: #073642;
+  --pico-form-element-border-color: #586e75;
+  --pico-form-element-color: #839496;
+  --pico-form-element-placeholder-color: #586e75;
+  --pico-form-element-active-background-color: #073642;
+  --pico-form-element-active-border-color: #268bd2;
 }
 
 body {

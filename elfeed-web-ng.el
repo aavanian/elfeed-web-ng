@@ -127,7 +127,16 @@ Example: \\='((:label \"Unread\" :filter \"+unread\"))"
   (with-elfeed-web-ng
     (let ((content (elfeed-deref (elfeed-ref--create :id ref))))
       (if content
-          (princ content)
+          (princ (concat
+                  "<html><head><style>"
+                  "body { background: #fdf6e3; color: #657b83; }"
+                  "@media (prefers-color-scheme: dark) {"
+                  "  body { background: #002b36; color: #839496; }"
+                  "  a { color: #268bd2; }"
+                  "}"
+                  "</style></head><body>"
+                  content
+                  "</body></html>"))
         (princ (json-encode '(:error 404)))
         (httpd-send-header t "application/json" 404)))))
 
