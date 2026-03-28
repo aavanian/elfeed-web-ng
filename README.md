@@ -70,6 +70,11 @@ pnpm run dev    # Vite dev server with HMR, proxying to Emacs backend
 pnpm run build  # Production build to web/
 ```
 
+## Ideas
+
+- **Keyboard navigation** — arrow keys to move between entries, enter to open, escape to go back
+- **Offline support** — cache app shell and pre-load entry content so the page works without network, syncing tag changes when back online
+
 ## Credits
 
 This project is a fork of the `web` sub-package from [elfeed-web](https://github.com/skeeto/elfeed) by Christopher Wellons, originally released under the [Unlicense](https://unlicense.org/) (public domain). The original frontend files are preserved in the `legacy/` directory for reference.
