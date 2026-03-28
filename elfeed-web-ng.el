@@ -273,6 +273,10 @@ and empty string for GET."
         (let ((path (substring uri-path (1- (length base)))))
           (httpd-serve-root t elfeed-web-ng-data-root path request))))))
 
+(defun httpd/favicon.ico (proc &rest _)
+  "Redirect /favicon.ico to /elfeed/favicon.ico."
+  (httpd-redirect proc "/elfeed/icons/favicon_dark.svg"))
+
 (defun elfeed-web-ng-update ()
   "Update waiting clients about database changes."
   (while elfeed-web-ng-waiting
