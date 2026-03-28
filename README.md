@@ -16,15 +16,39 @@ A modern web interface for [Elfeed](https://github.com/skeeto/elfeed), the Emacs
 Add `elfeed-web-ng` to your `load-path` and configure:
 
 ```elisp
-(require 'elfeed-web-ng)
-
-(setq elfeed-web-ng-saved-searches
-  '((:label "Unread"    :filter "+unread")
-    (:label "Starred"   :filter "+★")
-    (:label "Later"     :filter "+later +unread")))
-
-(elfeed-web-ng-start)
+(use-package elfeed-web-ng
+  :after elfeed
+  :straight (:type git :host github :repo "aavanian/elfeed-web-ng" :files ("*.el" "web"))
+  :init
+  ;; you don't need this if you already install simple-httpd elsewhere
+  (use-package simple-httpd
+    :straight (simple-httpd :type git :host github :repo "skeeto/emacs-web-server"
+                            :local-repo "skeeto-emacs-web-server")
+    :config
+    (setq httpd-host "127.0.0.1"
+          httpd-port 8082))
+  :custom
+  (elfeed-web-ng-saved-searches
+   '((:label "Unread"    :filter "+unread -later -to_source")
+     (:label "Starred"   :filter "+★")
+     (:label "Annotated" :filter "+⮐")
+     (:label "Later"     :filter "+later +unread"))))
 ```
+
+### Notes
+
+* there are (at least) two simple-httpd servers available through straight with conflicting name, hence the detailed recipe above.
+* the example above listens to "127.0.0.1" which is restrictive. Obviously, listening to "0.0.0.0" would be dangerous. My pattern is to use tailscale:
+
+```elisp
+(defvar 151e/my-tailscale-ip
+  (let ((ip (string-trim (shell-command-to-string "tailscale ip -4"))))
+    (if (string-match-p "^100\\." ip)
+        ip
+      "127.0.0.1")))
+```
+  
+  so and binding the server to that variable. Then I can access the interface safely from my mobile device with a home-screen bookmark to "http://machine-name.tailnet-name.ts.net:8082/elfeed" 
 
 ### Configuration
 
@@ -41,9 +65,9 @@ The frontend is built with Preact + Vite. Pre-built files are in `web/` so users
 To develop the frontend:
 
 ```sh
-npm install
-npm run dev    # Vite dev server with HMR, proxying to Emacs backend
-npm run build  # Production build to web/
+pnpm install
+pnpm run dev    # Vite dev server with HMR, proxying to Emacs backend
+pnpm run build  # Production build to web/
 ```
 
 ## Credits
