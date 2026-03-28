@@ -291,9 +291,12 @@ and empty string for GET."
   (setf elfeed-web-ng-enabled t))
 
 (defun elfeed-web-ng-stop ()
-  "Stop the Elfeed web interface server."
+  "Stop the Elfeed web interface server.
+This stops the underlying simple-httpd server, which is shared across
+all packages that use it (e.g., impatient-mode, skewer-mode)."
   (interactive)
-  (setf elfeed-web-ng-enabled nil))
+  (setf elfeed-web-ng-enabled nil)
+  (httpd-stop))
 
 (provide 'elfeed-web-ng)
 

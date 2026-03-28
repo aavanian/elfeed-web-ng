@@ -32,6 +32,8 @@ Add `elfeed-web-ng` to your `load-path` and configure:
 - `elfeed-web-ng-limit` — maximum entries per search (default: 512)
 - `httpd-host` / `httpd-port` — server binding (from simple-httpd)
 
+**Note:** `elfeed-web-ng-stop` stops the underlying simple-httpd server, which is shared across all packages that use it (e.g., impatient-mode, skewer-mode). If you need to keep simple-httpd running for other packages, set `elfeed-web-ng-enabled` to `nil` instead.
+
 ## Development
 
 The frontend is built with Preact + Vite. Pre-built files are in `web/` so users never need Node.js.
