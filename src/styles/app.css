@@ -238,21 +238,43 @@ header h1 {
 }
 
 .entry-item {
-  padding: 0.5rem 0.25rem;
   border-bottom: 1px solid var(--pico-muted-border-color);
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
 }
 
-.entry-item:hover {
+.entry-item-inner {
+  position: relative;
+  z-index: 1;
+  padding: 0.5rem 0.25rem;
+  background: var(--pico-background-color);
+}
+
+.entry-item:hover .entry-item-inner {
   background: var(--pico-card-background-color);
 }
 
-.entry-item[aria-selected="true"] {
+.entry-item[aria-selected="true"] .entry-item-inner {
   background: var(--pico-primary-focus);
 }
 
 .entry-item.unread .entry-title {
   font-weight: bold;
+}
+
+/* Swipe-to-toggle-read action background (touch only) */
+.swipe-bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 1rem;
+  background: var(--pico-primary-background);
+  color: var(--pico-primary-inverse);
+  font-size: 0.8rem;
+  pointer-events: none;
 }
 
 .entry-meta {
