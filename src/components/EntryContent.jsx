@@ -21,7 +21,7 @@ function formatDate(ms) {
   });
 }
 
-export function EntryContent({ entry, onBack, onSearch }) {
+export function EntryContent({ entry, onBack }) {
   const contentUrl = entry.content ? api.getContentUrl(entry.content) : null;
   const [srcdoc, setSrcdoc] = useState(null);
 
@@ -44,9 +44,12 @@ export function EntryContent({ entry, onBack, onSearch }) {
     };
   }, [contentUrl]);
 
-  const handleTagsChanged = useCallback(async () => {
-    await onSearch(store.query.value);
-  }, [onSearch]);
+  const handleTagsChanged = useCallback((updatedEntry) => {
+    store.entries.value = store.entries.value.map(e =>
+      e.webid === updatedEntry.webid ? updatedEntry : e
+    );
+    store.selectedEntry.value = updatedEntry;
+  }, []);
 
   return (
     <article>

@@ -11,8 +11,9 @@ export function TagActions({ entry, onTagsChanged }) {
     const has = tags.includes(tag);
     const add = has ? [] : [tag];
     const remove = has ? [tag] : [];
-    const result = await api.updateTags(add, remove, [entry.webid]);
-    onTagsChanged(result);
+    await api.updateTags(add, remove, [entry.webid]);
+    const newTags = has ? tags.filter(t => t !== tag) : [...tags, tag];
+    onTagsChanged({ ...entry, tags: newTags });
   }, [entry, tags, onTagsChanged]);
 
   const isUnread = tags.includes('unread');
