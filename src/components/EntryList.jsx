@@ -11,7 +11,7 @@ function formatDate(ms) {
 
 const SWIPE_THRESHOLD = 80;
 
-function SwipeableEntryItem({ entry, isSelected, onSelect, onSearch }) {
+function SwipeableEntryItem({ entry, isSelected, onSelect }) {
   const [swipeX, setSwipeX] = useState(0);
   const [snapping, setSnapping] = useState(false);
   const touch = useRef({ startX: 0, startY: 0, active: false, done: false, currentX: 0 });
@@ -60,7 +60,13 @@ function SwipeableEntryItem({ entry, isSelected, onSelect, onSearch }) {
       const remove = isUnread ? ['unread'] : [];
       try {
         await api.updateTags(add, remove, [entry.webid]);
-        onSearch(store.query.value);
+        const newTags = isUnread
+          ? entry.tags.filter(t => t !== 'unread')
+          : [...entry.tags, 'unread'];
+        const updatedEntry = { ...entry, tags: newTags };
+        store.entries.value = store.entries.value.map(e =>
+          e.webid === updatedEntry.webid ? updatedEntry : e
+        );
       } catch (_) {
         // snap back on error
       }
@@ -142,7 +148,6 @@ export function EntryList({ onSelect, onSearch }) {
               entry={entry}
               isSelected={selected?.webid === entry.webid}
               onSelect={onSelect}
-              onSearch={onSearch}
             />
           ))}
         </ul>
