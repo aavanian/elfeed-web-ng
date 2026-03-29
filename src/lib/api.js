@@ -52,12 +52,9 @@ export async function updateTags(add, remove, entries) {
   return res.json();
 }
 
-export async function pollUpdate(time) {
-  const url = time != null
-    ? `${BASE}/update?time=${time}`
-    : `${BASE}/update`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Poll failed: ${res.status}`);
+export async function feedUpdateDone() {
+  const res = await fetch(`${BASE}/feed-update-done`);
+  if (!res.ok) throw new Error(`Feed update done poll failed: ${res.status}`);
   return res.json();
 }
 

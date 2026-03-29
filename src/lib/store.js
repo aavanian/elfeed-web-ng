@@ -9,7 +9,6 @@ export const savedSearches = signal([]);
 export const capabilities = signal(null);
 export const loading = signal(false);
 export const updating = signal(false);
-export const pollTime = signal(null);
 
 export const selectedEntryContent = computed(() => {
   const entry = selectedEntry.value;

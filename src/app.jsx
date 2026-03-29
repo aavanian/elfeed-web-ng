@@ -22,7 +22,6 @@ export function App() {
         store.query.value = '@3-days-old';
       }
       await doSearch(store.query.value);
-      startPolling();
     })();
   }, []);
 
@@ -35,26 +34,6 @@ export function App() {
       store.loading.value = false;
     }
   }, []);
-
-  const startPolling = useCallback(async () => {
-    try {
-      const time = await api.pollUpdate(null);
-      store.pollTime.value = time;
-      pollLoop();
-    } catch { /* polling not critical */ }
-  }, []);
-
-  const pollLoop = useCallback(async () => {
-    while (true) {
-      try {
-        const time = await api.pollUpdate(store.pollTime.value);
-        store.pollTime.value = time;
-        await doSearch(store.query.value);
-      } catch {
-        await new Promise(r => setTimeout(r, 5000));
-      }
-    }
-  }, [doSearch]);
 
   const onSearch = useCallback(async (q) => {
     store.query.value = q;
@@ -74,6 +53,7 @@ export function App() {
     store.updating.value = true;
     try {
       await api.feedUpdate();
+      await api.feedUpdateDone();
       await doSearch(store.query.value);
     } finally {
       store.updating.value = false;

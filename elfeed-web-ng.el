@@ -22,7 +22,8 @@
 ;; /elfeed/things/<webid>   -- entry or feed as JSON
 ;; /elfeed/content/<ref>    -- entry content (HTML)
 ;; /elfeed/tags             -- PUT to modify entry tags
-;; /elfeed/update?time=T    -- long-poll for DB changes
+;; /elfeed/feed-update      -- trigger a feed update
+;; /elfeed/feed-update-done -- long-poll until feed update completes
 ;; /elfeed/mark-all-read    -- remove unread from all entries
 ;; /elfeed/saved-searches   -- configured saved searches
 ;; /elfeed/annotation/<id>  -- GET/PUT entry annotations (requires elfeed-curate)
@@ -159,17 +160,16 @@ Example: \\='((:label \"Unread\" :filter \"+unread\"))"
         (cl-coerce
          (mapcar #'elfeed-web-ng-for-json (nreverse results)) 'vector))))))
 
-(defvar elfeed-web-ng-waiting ()
-  "Clients waiting for an update.")
+(defvar elfeed-web-ng-feed-done-waiting ()
+  "Clients waiting for feed update completion.")
 
-(defservlet* elfeed/update application/json (time)
-  "Return the current :last-update time for the database. If a
-time parameter is provided don't respond until the time has
-advanced past it (long poll)."
-  (let ((update-time (ffloor (elfeed-db-last-update))))
-    (if (= update-time (ffloor (float (string-to-number (or time "")))))
-        (push (httpd-discard-buffer) elfeed-web-ng-waiting)
-      (princ (json-encode update-time)))))
+(defun elfeed-web-ng--notify-feed-done ()
+  "Respond to all clients waiting for feed update completion."
+  (while elfeed-web-ng-feed-done-waiting
+    (let ((proc (pop elfeed-web-ng-feed-done-waiting)))
+      (ignore-errors
+        (with-httpd-buffer proc "application/json"
+          (princ (json-encode '(:status "done"))))))))
 
 (defservlet* elfeed/mark-all-read application/json ()
   "Marks all entries in the database as read (quick-and-dirty)."
@@ -190,7 +190,8 @@ object with any of these properties:
 The current set of tags for each entry will be returned."
   (with-elfeed-web-ng
     (let* ((request (caar httpd-request))
-           (content (cadr (assoc "Content" httpd-request)))
+           (content (decode-coding-string
+                     (cadr (assoc "Content" httpd-request)) 'utf-8))
            (json (ignore-errors (json-read-from-string content)))
            (add (cdr (assoc 'add json)))
            (remove (cdr (assoc 'remove json)))
@@ -226,6 +227,7 @@ The current set of tags for each entry will be returned."
                              (delq nil
                                    (list "saved-searches"
                                          "tags"
+                                         "feed-update-done"
                                          (when (featurep 'elfeed-curate)
                                            "annotations")))))))))
 
@@ -260,7 +262,8 @@ and empty string for GET."
             (progn
               (princ (json-encode '(:error "elfeed-curate not available")))
               (httpd-send-header t "application/json" 501))
-          (let* ((content (cadr (assoc "Content" httpd-request)))
+          (let* ((content (decode-coding-string
+                           (cadr (assoc "Content" httpd-request)) 'utf-8))
                  (json-data (ignore-errors (json-read-from-string content)))
                  (annotation (cdr (assoc 'annotation json-data))))
             (if (null json-data)
@@ -274,11 +277,24 @@ and empty string for GET."
         (princ (json-encode '(:error "method not allowed")))
         (httpd-send-header t "application/json" 405))))))
 
+(defun elfeed-web-ng--check-queue-done ()
+  "Poll `elfeed-queue-count-total' until all feeds are fetched,
+then notify waiting clients."
+  (if (zerop (elfeed-queue-count-total))
+      (elfeed-web-ng--notify-feed-done)
+    (run-at-time 1 nil #'elfeed-web-ng--check-queue-done)))
+
 (defservlet* elfeed/feed-update application/json ()
-  "Trigger an elfeed feed update."
+  "Trigger an elfeed feed update and start monitoring for completion."
   (with-elfeed-web-ng
     (elfeed-update)
+    (elfeed-web-ng--check-queue-done)
     (princ (json-encode '(:status "updating")))))
+
+(defservlet* elfeed/feed-update-done application/json ()
+  "Long-poll endpoint that responds when a feed update completes."
+  (with-elfeed-web-ng
+    (push (httpd-discard-buffer) elfeed-web-ng-feed-done-waiting)))
 
 (defservlet elfeed text/plain (uri-path _ request)
   "Serve static files from `elfeed-web-ng-data-root'."
@@ -301,15 +317,6 @@ and empty string for GET."
   "Redirect /favicon.ico to /elfeed/favicon.ico."
   (httpd-redirect proc "/elfeed/icons/favicon_dark.svg"))
 
-(defun elfeed-web-ng-update ()
-  "Update waiting clients about database changes."
-  (while elfeed-web-ng-waiting
-    (let ((proc (pop elfeed-web-ng-waiting)))
-      (ignore-errors
-        (with-httpd-buffer proc "application/json"
-          (princ (json-encode (ffloor (elfeed-db-last-update)))))))))
-
-(add-hook 'elfeed-db-update-hook 'elfeed-web-ng-update)
 
 ;;;###autoload
 (defun elfeed-web-ng-start ()
