@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useCallback } from 'preact/hooks';
+import { useCallback, useEffect, useState } from 'preact/hooks';
 import * as api from '../lib/api';
 import * as store from '../lib/store';
 import { TagActions } from './TagActions';
 import { AnnotationEditor } from './AnnotationEditor';
+
+const CONTENT_STYLE = `
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    ul, ol { padding-left: 1.5em; }
+  </style>
+`;
 
 function formatDate(ms) {
   return new Date(ms).toLocaleDateString(undefined, {
@@ -14,6 +21,24 @@ function formatDate(ms) {
 
 export function EntryContent({ entry, onBack, onSearch }) {
   const contentUrl = entry.content ? api.getContentUrl(entry.content) : null;
+  const [srcdoc, setSrcdoc] = useState(null);
+
+  useEffect(() => {
+    if (!contentUrl) {
+      setSrcdoc(null);
+      return;
+    }
+    let cancelled = false;
+    fetch(contentUrl)
+      .then(res => res.text())
+      .then(html => {
+        if (!cancelled) setSrcdoc(CONTENT_STYLE + html);
+      })
+      .catch(() => {
+        if (!cancelled) setSrcdoc(CONTENT_STYLE);
+      });
+    return () => { cancelled = true; };
+  }, [contentUrl]);
 
   const handleTagsChanged = useCallback(async () => {
     await onSearch(store.query.value);
@@ -43,7 +68,7 @@ export function EntryContent({ entry, onBack, onSearch }) {
       {contentUrl ? (
         <iframe
           class="content-frame"
-          src={contentUrl}
+          srcdoc={srcdoc ?? ''}
           sandbox=""
           title="Entry content"
         />
