@@ -112,7 +112,6 @@ export function App() {
             <EntryContent
               entry={selected}
               onBack={onBack}
-              onSearch={onSearch}
             />
           )}
         </div>
