@@ -1,0 +1,3 @@
+# when rebasing or merging branches, conflicts on the files under web/ shouldn't
+# be managed as the files *needs* to be rebuilt anyway
+web/** merge=ours

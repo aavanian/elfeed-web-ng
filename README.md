@@ -70,6 +70,10 @@ pnpm run dev    # Vite dev server with HMR, proxying to Emacs backend
 pnpm run build  # Production build to web/
 ```
 
+### Merging / Rebasing
+
+Since the built files are under version control, most merge or rebase will lead to conflict on those. The `.gitattributes` file is set to ignore the conflict and take the newer files in any case. They will be stale and will need a rebuild which should then be committed (ideally squashing that build commit with the merge commit if any or one of the merged/rebased commits. You will need something like `git config --global merge.ours.driver true` in your config for the `.gitattributes` config to work.
+
 ## Ideas
 
 - **Keyboard navigation** — arrow keys to move between entries, enter to open, escape to go back
