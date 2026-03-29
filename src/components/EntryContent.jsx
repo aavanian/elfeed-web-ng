@@ -1,21 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useCallback, useEffect, useState } from 'preact/hooks';
-import * as api from '../lib/api';
-import * as store from '../lib/store';
-import { TagActions } from './TagActions';
-import { AnnotationEditor } from './AnnotationEditor';
+import { useCallback, useEffect, useState } from "preact/hooks";
+import * as api from "../lib/api";
+import * as store from "../lib/store";
+import { TagActions } from "./TagActions";
+import { AnnotationEditor } from "./AnnotationEditor";
 
 const CONTENT_STYLE = `
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
-    ul, ol { padding-left: 1.5em; }
+    ul, ol { padding-left: 1em; }
   </style>
 `;
 
 function formatDate(ms) {
   return new Date(ms).toLocaleDateString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric',
+    year: "numeric",
+    month: "short",
+    day: "numeric",
   });
 }
 
@@ -30,14 +32,16 @@ export function EntryContent({ entry, onBack, onSearch }) {
     }
     let cancelled = false;
     fetch(contentUrl)
-      .then(res => res.text())
-      .then(html => {
+      .then((res) => res.text())
+      .then((html) => {
         if (!cancelled) setSrcdoc(CONTENT_STYLE + html);
       })
       .catch(() => {
         if (!cancelled) setSrcdoc(CONTENT_STYLE);
       });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [contentUrl]);
 
   const handleTagsChanged = useCallback(async () => {
@@ -58,7 +62,7 @@ export function EntryContent({ entry, onBack, onSearch }) {
         </h2>
         <div class="content-meta">
           <span>{entry.feed?.title}</span>
-          {' — '}
+          {" — "}
           <span>{formatDate(entry.date)}</span>
         </div>
       </div>
@@ -68,7 +72,7 @@ export function EntryContent({ entry, onBack, onSearch }) {
       {contentUrl ? (
         <iframe
           class="content-frame"
-          srcdoc={srcdoc ?? ''}
+          srcdoc={srcdoc ?? ""}
           sandbox=""
           title="Entry content"
         />
