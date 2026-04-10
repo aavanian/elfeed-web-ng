@@ -51,10 +51,16 @@ function SwipeableEntryItem({ entry, isSelected, onSelect }) {
 
   const handleTouchEnd = async (e) => {
     if (!touch.current.active) return;
-    const dx = touch.current.currentX;
+    // changedTouches gives the authoritative final position; touchmove may
+    // not have caught up on fast swipes, making currentX unreliable.
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touch.current.startX;
+
+    // Snap back immediately so the tray doesn't stay lit while the API call runs.
+    setSnapping(true);
+    setSwipeX(0);
 
     if (dx < -SWIPE_THRESHOLD) {
-      e.preventDefault();
       touch.current.done = true;
       const add = isUnread ? [] : ['unread'];
       const remove = isUnread ? ['unread'] : [];
@@ -67,13 +73,8 @@ function SwipeableEntryItem({ entry, isSelected, onSelect }) {
         store.entries.value = store.entries.value.map(e =>
           e.webid === updatedEntry.webid ? updatedEntry : e
         );
-      } catch (_) {
-        // snap back on error
-      }
+      } catch (_) {}
     }
-
-    setSnapping(true);
-    setSwipeX(0);
   };
 
   const handleClick = () => {
