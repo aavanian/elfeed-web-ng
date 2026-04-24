@@ -16,12 +16,15 @@ export function App() {
       const searches = await api.getSavedSearches();
       store.savedSearches.value = searches;
 
-      if (searches.length > 0) {
-        store.query.value = searches[0].filter;
-      } else {
-        store.query.value = '@3-days-old';
+      const initialQuery = searches.length > 0 ? searches[0].filter : '@3-days-old';
+      store.query.value = initialQuery;
+
+      store.loading.value = true;
+      try {
+        store.entries.value = await api.search(initialQuery);
+      } finally {
+        store.loading.value = false;
       }
-      await doSearch(store.query.value);
     })();
   }, []);
 
