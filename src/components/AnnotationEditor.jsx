@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import * as api from '../lib/api';
 
-export function AnnotationEditor({ entry }) {
+export function AnnotationEditor({ entry, onAnnotationChanged }) {
   const [text, setText] = useState(entry.annotation || '');
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
@@ -19,6 +19,7 @@ export function AnnotationEditor({ entry }) {
     setSaving(true);
     try {
       await api.setAnnotation(entry.webid, text);
+      onAnnotationChanged({ ...entry, annotation: text });
     } finally {
       setSaving(false);
     }

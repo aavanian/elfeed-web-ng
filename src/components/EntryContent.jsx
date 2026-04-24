@@ -60,6 +60,13 @@ export function EntryContent({ entry, onBack }) {
     store.selectedEntry.value = updatedEntry;
   }, []);
 
+  const handleAnnotationChanged = useCallback((updatedEntry) => {
+    store.entries.value = store.entries.value.map(e =>
+      e.webid === updatedEntry.webid ? updatedEntry : e
+    );
+    store.selectedEntry.value = updatedEntry;
+  }, []);
+
   return (
     <article>
       <button class="back-button outline secondary" onClick={onBack}>
@@ -92,7 +99,7 @@ export function EntryContent({ entry, onBack }) {
         <p class="secondary">No content available.</p>
       )}
 
-      <AnnotationEditor entry={entry} />
+      <AnnotationEditor entry={entry} onAnnotationChanged={handleAnnotationChanged} />
     </article>
   );
 }
