@@ -12,7 +12,7 @@ export function SavedSearches({ onSearch }) {
     <nav class="saved-searches" role="tablist">
       {searches.map((s) => (
         <button
-          key={s.filter}
+          key={s.label}
           role="tab"
           aria-current={current === s.filter ? 'true' : undefined}
           class={current === s.filter ? 'contrast' : 'outline secondary'}
