@@ -149,6 +149,9 @@ allowed set, preventing unbounded obarray growth via `intern'."
                   "</style></head><body>"
                   content
                   "</body></html>"))
+          (httpd-send-header t "text/html" 200
+                             :Content-Security-Policy
+                             "sandbox allow-popups; default-src 'self'")
         (princ (json-encode '(:error 404)))
         (httpd-send-header t "application/json" 404)))))
 
