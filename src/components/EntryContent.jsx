@@ -13,6 +13,10 @@ const CONTENT_STYLE = `
   </style>
 `;
 
+function rewriteLinks(html) {
+  return html.replace(/<a\s/gi, '<a target="_blank" rel="noopener noreferrer" ');
+}
+
 function formatDate(ms) {
   return new Date(ms).toLocaleDateString(undefined, {
     year: "numeric",
@@ -34,7 +38,7 @@ export function EntryContent({ entry, onBack }) {
     fetch(contentUrl)
       .then((res) => res.text())
       .then((html) => {
-        if (!cancelled) setSrcdoc(CONTENT_STYLE + html);
+        if (!cancelled) setSrcdoc(CONTENT_STYLE + rewriteLinks(html));
       })
       .catch(() => {
         if (!cancelled) setSrcdoc(CONTENT_STYLE);
@@ -76,7 +80,7 @@ export function EntryContent({ entry, onBack }) {
         <iframe
           class="content-frame"
           srcdoc={srcdoc ?? ""}
-          sandbox=""
+          sandbox="allow-popups"
           title="Entry content"
         />
       ) : (
