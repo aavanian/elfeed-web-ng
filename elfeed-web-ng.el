@@ -292,9 +292,13 @@ then notify waiting clients."
     (princ (json-encode '(:status "updating")))))
 
 (defservlet* elfeed/feed-update-done application/json ()
-  "Long-poll endpoint that responds when a feed update completes."
+  "Long-poll endpoint that responds when a feed update completes.
+If the update already finished before this request arrived, respond
+immediately rather than parking the process with nothing to drain it."
   (with-elfeed-web-ng
-    (push (httpd-discard-buffer) elfeed-web-ng-feed-done-waiting)))
+    (if (zerop (elfeed-queue-count-total))
+        (princ (json-encode '(:status "done")))
+      (push (httpd-discard-buffer) elfeed-web-ng-feed-done-waiting))))
 
 (defservlet elfeed text/plain (uri-path _ request)
   "Serve static files from `elfeed-web-ng-data-root'."
