@@ -408,3 +408,12 @@ header h1 {
   color: var(--pico-muted-color);
   font-style: italic;
 }
+
+.error-banner {
+  background: var(--pico-del-color, #dc3545);
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}

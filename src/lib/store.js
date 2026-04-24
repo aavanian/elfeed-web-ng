@@ -9,3 +9,4 @@ export const savedSearches = signal([]);
 export const capabilities = signal(null);
 export const loading = signal(false);
 export const updating = signal(false);
+export const error = signal(null);

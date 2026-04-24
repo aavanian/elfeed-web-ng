@@ -11,19 +11,23 @@ import { EntryContent } from './components/EntryContent';
 export function App() {
   useEffect(() => {
     (async () => {
-      const caps = await api.init();
-      store.capabilities.value = caps;
-      const searches = await api.getSavedSearches();
-      store.savedSearches.value = searches;
-
-      const initialQuery = searches.length > 0 ? searches[0].filter : '@3-days-old';
-      store.query.value = initialQuery;
-
-      store.loading.value = true;
       try {
-        store.entries.value = await api.search(initialQuery);
-      } finally {
-        store.loading.value = false;
+        const caps = await api.init();
+        store.capabilities.value = caps;
+        const searches = await api.getSavedSearches();
+        store.savedSearches.value = searches;
+
+        const initialQuery = searches.length > 0 ? searches[0].filter : '@3-days-old';
+        store.query.value = initialQuery;
+
+        store.loading.value = true;
+        try {
+          store.entries.value = await api.search(initialQuery);
+        } finally {
+          store.loading.value = false;
+        }
+      } catch {
+        store.error.value = 'Could not reach Elfeed backend.';
       }
     })();
   }, []);
@@ -33,6 +37,7 @@ export function App() {
     try {
       const results = await api.search(q);
       store.entries.value = results;
+      store.error.value = null;
     } finally {
       store.loading.value = false;
     }
@@ -65,9 +70,11 @@ export function App() {
 
   const selected = store.selectedEntry.value;
   const updating = store.updating.value;
+  const error = store.error.value;
 
   return (
     <main class="container-fluid">
+      {error && <div class="error-banner" role="alert">{error}</div>}
       <header>
         <h1>Elfeed</h1>
         <button
