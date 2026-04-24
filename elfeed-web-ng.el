@@ -109,6 +109,14 @@ Example: \\='((:label \"Unread\" :filter \"+unread\"))"
            :title  (elfeed-feed-title thing)
            :author (elfeed-feed-author thing)))))
 
+(defun elfeed-web-ng--valid-tag-p (tag)
+  "Return non-nil if TAG is a valid elfeed tag string.
+Rejects strings that are too long or contain characters outside the
+allowed set, preventing unbounded obarray growth via `intern'."
+  (and (stringp tag)
+       (<= (length tag) 64)
+       (string-match-p "\\`[-a-zA-Z0-9_★]+\\'" tag)))
+
 (defmacro with-elfeed-web-ng (&rest body)
   "Only execute BODY if `elfeed-web-ng-enabled' is true."
   (declare (indent 0))
@@ -193,14 +201,17 @@ The current set of tags for each entry will be returned."
            (content (decode-coding-string
                      (cadr (assoc "Content" httpd-request)) 'utf-8))
            (json (ignore-errors (json-read-from-string content)))
-           (add (cdr (assoc 'add json)))
-           (remove (cdr (assoc 'remove json)))
+           (add (append (cdr (assoc 'add json)) nil))
+           (remove (append (cdr (assoc 'remove json)) nil))
            (webids (cdr (assoc 'entries json)))
            (entries (cl-map 'list #'elfeed-web-ng-lookup webids))
+           (tags-valid (and (cl-every #'elfeed-web-ng--valid-tag-p add)
+                            (cl-every #'elfeed-web-ng--valid-tag-p remove)))
            (status
             (cond
              ((not (equal request "PUT")) 405)
              ((null json) 400)
+             ((not tags-valid) 400)
              ((cl-some #'null entries) 404)
              (t 200))))
       (if (not (eql status 200))
@@ -209,8 +220,8 @@ The current set of tags for each entry will be returned."
             (httpd-send-header t "application/json" status))
         (cl-loop for entry in entries
                  for webid = (elfeed-web-ng-make-webid entry)
-                 do (apply #'elfeed-tag entry (cl-map 'list #'intern add))
-                 do (apply #'elfeed-untag entry (cl-map 'list #'intern remove))
+                 do (apply #'elfeed-tag entry (mapcar #'intern add))
+                 do (apply #'elfeed-untag entry (mapcar #'intern remove))
                  collect (cons webid (elfeed-entry-tags entry)) into result
                  finally (princ (if result (json-encode result) "{}")))))))
 
