@@ -98,8 +98,9 @@ function SwipeableEntryItem({ entry, isSelected, onSelect }) {
   return (
     <li
       ref={liRef}
+      role="option"
       class={`entry-item ${isUnread ? 'unread' : ''}`}
-      aria-selected={isSelected ? 'true' : undefined}
+      aria-selected={isSelected ? 'true' : 'false'}
       onClick={handleClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
@@ -164,7 +165,7 @@ export function EntryList({ onSelect, onSearch }) {
       {entryList.length === 0 ? (
         <p class="no-results">No results.</p>
       ) : (
-        <ul class="entry-list">
+        <ul class="entry-list" role="listbox" aria-label="Entries">
           {entryList.map((entry) => (
             <SwipeableEntryItem
               key={entry.webid}
