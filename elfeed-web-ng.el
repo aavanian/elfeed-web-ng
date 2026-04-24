@@ -70,7 +70,7 @@ Example: \\='((:label \"Unread\" :filter \"+unread\"))"
          (hash (base64-encode-string (secure-hash 'sha1 keyed nil nil t)))
          (no-slash (replace-regexp-in-string "/" "-" hash))
          (no-plus (replace-regexp-in-string "\\+" "_" no-slash))
-         (webid (substring no-plus 0 8)))
+         (webid (substring no-plus 0 12)))
     (setf (gethash webid elfeed-web-ng-webid-map) thing)
     webid))
 
