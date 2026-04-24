@@ -62,13 +62,14 @@ function SwipeableEntryItem({ entry, isSelected, onSelect }) {
 
     if (dx < -SWIPE_THRESHOLD) {
       touch.current.done = true;
+      const tags = entry.tags ?? [];
       const add = isUnread ? [] : ['unread'];
       const remove = isUnread ? ['unread'] : [];
       try {
         await api.updateTags(add, remove, [entry.webid]);
         const newTags = isUnread
-          ? entry.tags.filter(t => t !== 'unread')
-          : [...entry.tags, 'unread'];
+          ? tags.filter(t => t !== 'unread')
+          : [...tags, 'unread'];
         const updatedEntry = { ...entry, tags: newTags };
         store.entries.value = store.entries.value.map(e =>
           e.webid === updatedEntry.webid ? updatedEntry : e
