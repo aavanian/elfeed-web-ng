@@ -74,7 +74,14 @@ function SwipeableEntryItem({ entry, isSelected, onSelect }) {
         store.entries.value = store.entries.value.map(e =>
           e.webid === updatedEntry.webid ? updatedEntry : e
         );
-      } catch (_) {}
+      } catch (_) {
+        // Flash the tray red briefly so the user sees the action failed.
+        setSnapping(false);
+        setSwipeX(-(SWIPE_THRESHOLD + 20));
+        await new Promise(r => setTimeout(r, 800));
+        setSnapping(true);
+        setSwipeX(0);
+      }
     }
   };
 
