@@ -13,6 +13,15 @@ const CONTENT_STYLE = `
   </style>
 `;
 
+function safeHref(url) {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'https:' || protocol === 'http:' ? url : '#';
+  } catch {
+    return '#';
+  }
+}
+
 function rewriteLinks(html) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   doc.querySelectorAll('a[href]').forEach(a => {
@@ -75,7 +84,7 @@ export function EntryContent({ entry, onBack }) {
 
       <div class="content-header">
         <h2>
-          <a href={entry.link} target="_blank" rel="noopener noreferrer">
+          <a href={safeHref(entry.link)} target="_blank" rel="noopener noreferrer">
             {entry.title}
           </a>
         </h2>
