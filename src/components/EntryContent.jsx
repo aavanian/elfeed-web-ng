@@ -14,7 +14,12 @@ const CONTENT_STYLE = `
 `;
 
 function rewriteLinks(html) {
-  return html.replace(/<a\s/gi, '<a target="_blank" rel="noopener noreferrer" ');
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  doc.querySelectorAll('a[href]').forEach(a => {
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+  });
+  return doc.body.innerHTML;
 }
 
 function formatDate(ms) {
