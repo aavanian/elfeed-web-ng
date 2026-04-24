@@ -4,8 +4,8 @@
   "start_url": "/elfeed/",
   "scope": "/elfeed/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#1a1a2e",
+  "background_color": "#002b36",
+  "theme_color": "#073642",
   "icons": [
     {
       "src": "/elfeed/icons/favicon_dark.svg",
