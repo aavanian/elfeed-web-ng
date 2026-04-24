@@ -417,3 +417,9 @@ header h1 {
   margin-bottom: 0.5rem;
   font-size: 0.9rem;
 }
+
+.error-inline {
+  color: var(--pico-del-color, #dc3545);
+  display: block;
+  padding: 0.25rem 0;
+}

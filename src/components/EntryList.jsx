@@ -128,14 +128,25 @@ export function EntryList({ onSelect, onSearch }) {
   const entryList = store.entries.value;
   const selected = store.selectedEntry.value;
   const loading = store.loading.value;
+  const [markingAllRead, setMarkingAllRead] = useState(false);
+  const [markAllError, setMarkAllError] = useState(null);
 
   if (loading && entryList.length === 0) {
     return <div class="loading-bar" />;
   }
 
   const handleMarkAllRead = async () => {
-    await api.markAllRead();
-    onSearch(store.query.value);
+    if (!window.confirm('Mark all entries as read?')) return;
+    setMarkingAllRead(true);
+    setMarkAllError(null);
+    try {
+      await api.markAllRead();
+      onSearch(store.query.value);
+    } catch {
+      setMarkAllError('Failed to mark all read.');
+    } finally {
+      setMarkingAllRead(false);
+    }
   };
 
   return (
@@ -143,10 +154,13 @@ export function EntryList({ onSelect, onSearch }) {
       <div class="entry-list-header">
         <small class="secondary">{entryList.length} entries</small>
         <button class="outline secondary mark-all-read"
-                onClick={handleMarkAllRead}>
+                onClick={handleMarkAllRead}
+                disabled={markingAllRead}
+                aria-busy={markingAllRead}>
           Mark all read
         </button>
       </div>
+      {markAllError && <small class="error-inline">{markAllError}</small>}
       {entryList.length === 0 ? (
         <p class="no-results">No results.</p>
       ) : (
