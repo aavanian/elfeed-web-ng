@@ -1,28 +1,37 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useCallback } from 'preact/hooks';
+import { useCallback, useState } from 'preact/hooks';
 import * as api from '../lib/api';
-import * as store from '../lib/store';
 
 export function TagActions({ entry, onTagsChanged }) {
   const tags = entry.tags || [];
+  const [pending, setPending] = useState(null);
 
   const toggleTag = useCallback(async (tag) => {
-    const has = tags.includes(tag);
-    const add = has ? [] : [tag];
-    const remove = has ? [tag] : [];
-    await api.updateTags(add, remove, [entry.webid]);
-    const newTags = has ? tags.filter(t => t !== tag) : [...tags, tag];
-    onTagsChanged({ ...entry, tags: newTags });
-  }, [entry, tags, onTagsChanged]);
+    if (pending !== null) return;
+    setPending(tag);
+    try {
+      const has = tags.includes(tag);
+      const add = has ? [] : [tag];
+      const remove = has ? [tag] : [];
+      await api.updateTags(add, remove, [entry.webid]);
+      const newTags = has ? tags.filter(t => t !== tag) : [...tags, tag];
+      onTagsChanged({ ...entry, tags: newTags });
+    } finally {
+      setPending(null);
+    }
+  }, [entry, tags, onTagsChanged, pending]);
 
   const isUnread = tags.includes('unread');
+  const disabled = pending !== null;
 
   return (
     <div class="tag-actions">
       <button
         aria-pressed={isUnread ? 'true' : 'false'}
         class={isUnread ? '' : 'outline'}
+        disabled={disabled}
+        aria-busy={pending === 'unread'}
         onClick={() => toggleTag('unread')}
       >
         {isUnread ? 'Mark read' : 'Mark unread'}
@@ -30,6 +39,9 @@ export function TagActions({ entry, onTagsChanged }) {
       <button
         aria-pressed={tags.includes('★') ? 'true' : 'false'}
         class={tags.includes('★') ? '' : 'outline'}
+        aria-label="Favourite"
+        disabled={disabled}
+        aria-busy={pending === '★'}
         onClick={() => toggleTag('★')}
       >
         ★
@@ -37,6 +49,8 @@ export function TagActions({ entry, onTagsChanged }) {
       <button
         aria-pressed={tags.includes('later') ? 'true' : 'false'}
         class={tags.includes('later') ? '' : 'outline'}
+        disabled={disabled}
+        aria-busy={pending === 'later'}
         onClick={() => toggleTag('later')}
       >
         Later
