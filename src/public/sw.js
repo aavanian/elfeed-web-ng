@@ -28,16 +28,18 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(request.url);
 
   // API calls: network-first
+  const p = url.pathname;
   if (url.pathname.startsWith('/elfeed/') &&
-      (url.pathname.includes('/search') ||
-       url.pathname.includes('/tags') ||
-       url.pathname.includes('/update') ||
-       url.pathname.includes('/api') ||
-       url.pathname.includes('/annotation') ||
-       url.pathname.includes('/saved-searches') ||
-       url.pathname.includes('/things') ||
-       url.pathname.includes('/content') ||
-       url.pathname.includes('/mark-all-read'))) {
+      (p.includes('/search') ||
+       p.includes('/tags') ||
+       p === '/elfeed/feed-update' ||
+       p === '/elfeed/feed-update-done' ||
+       p.includes('/api') ||
+       p.includes('/annotation') ||
+       p.includes('/saved-searches') ||
+       p.includes('/things') ||
+       p.includes('/content') ||
+       p.includes('/mark-all-read'))) {
     event.respondWith(
       fetch(request).catch(() => caches.match(request))
     );
