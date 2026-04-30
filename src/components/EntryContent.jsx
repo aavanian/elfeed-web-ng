@@ -9,7 +9,14 @@ import { AnnotationEditor } from "./AnnotationEditor";
 const CONTENT_STYLE = `
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
+    body { background: #fdf6e3; color: #657b83; overflow-x: hidden; word-break: break-word; }
+    a { color: #268bd2; }
     ul, ol { padding-left: 1em; }
+    img, video, table { max-width: 100%; height: auto; }
+    pre, code { overflow-x: auto; max-width: 100%; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #002b36; color: #839496; }
+    }
   </style>
 `;
 
@@ -27,6 +34,16 @@ function rewriteLinks(html) {
   doc.querySelectorAll('a[href]').forEach(a => {
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
+  });
+  doc.querySelectorAll('img[src]').forEach(img => {
+    if (!img.closest('a')) {
+      const a = doc.createElement('a');
+      a.href = img.src;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      img.parentNode.insertBefore(a, img);
+      a.appendChild(img);
+    }
   });
   return doc.body.innerHTML;
 }
