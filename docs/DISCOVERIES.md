@@ -37,9 +37,17 @@ whole cache file and restarting also works but re-validates every package.
 `CACHE_NAME`, so an installed home-screen PWA keeps serving the old
 `index.html` after a deploy. On iOS the home-screen app is its own sandboxed
 container (and, if added via a third-party default browser, is not listed under
-Safari's Website Data) — the reliable bust is to delete and re-add the
-home-screen icon. Tracked for a proper fix (build-time cache versioning +
-network-first shell) in issue #11.
+Safari's Website Data) — the reliable bust used to be to delete and re-add the
+home-screen icon.
+
+Fix adopted (#11): the `stampServiceWorker` Vite plugin replaces a
+`__BUILD_ID__` placeholder in the emitted `sw.js` with `Date.now()` on every
+build, so `CACHE_NAME` changes each build and the existing `activate` handler
+evicts the stale shell. The app shell (navigations + static assets) is now
+served **network-first** with the cache as offline fallback, so an online device
+always pulls the fresh build on next launch — no manual cache clearing. Because
+`sw.js` lives in the public dir (copied verbatim, never transformed by Vite),
+the plugin rewrites the output file in `closeBundle` rather than via `transform`.
 
 ## Swapping an iframe's `srcdoc` pushes a phantom history entry
 

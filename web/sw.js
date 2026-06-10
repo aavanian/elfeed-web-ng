@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-const CACHE_NAME = 'elfeed-web-v1';
+// The build id below is stamped at build time (see vite.config.js) so
+// CACHE_NAME changes on every build, letting the activate handler evict
+// stale shells.
+const CACHE_NAME = 'elfeed-web-mq7tnzxa';
 
 const STATIC_ASSETS = [
   '/elfeed/',
@@ -46,8 +49,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static assets: cache-first
+  // App shell (navigations + static assets): network-first so online devices
+  // always pull the fresh build; fall back to cache when offline.
   event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request))
+    fetch(request)
+      .then((response) => {
+        if (response.ok && request.method === 'GET') {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });

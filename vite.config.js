@@ -1,8 +1,33 @@
+import { readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 
+// Stamp a unique build id into the emitted sw.js, replacing the __BUILD_ID__
+// placeholder so CACHE_NAME changes on every build. sw.js lives in the public
+// dir (copied verbatim, never transformed), so we rewrite the output file
+// after the bundle has been written.
+function stampServiceWorker() {
+  let root;
+  let outDir;
+  return {
+    name: 'stamp-service-worker',
+    apply: 'build',
+    configResolved(config) {
+      root = config.root;
+      outDir = config.build.outDir;
+    },
+    closeBundle() {
+      const buildId = Date.now().toString(36);
+      const swPath = resolve(root, outDir, 'sw.js');
+      const src = readFileSync(swPath, 'utf8');
+      writeFileSync(swPath, src.replace(/__BUILD_ID__/g, buildId));
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [preact()],
+  plugins: [preact(), stampServiceWorker()],
   root: 'src',
   base: '/elfeed/',
   build: {
