@@ -7,6 +7,8 @@
 ;; Original: https://github.com/skeeto/elfeed (Unlicense)
 
 ;; URL: https://github.com/aavanian/elfeed-web-ng
+;; Version: 1.0.0
+;; Package-Requires: ((simple-httpd "1.5.1") (elfeed "3.2.0") (emacs "25.1"))
 
 ;;; Commentary:
 
@@ -35,6 +37,10 @@
 (require 'simple-httpd)
 (require 'elfeed-db)
 (require 'elfeed-search)
+
+;; Optional integration with elfeed-curate for entry annotations.
+(declare-function elfeed-curate-get-entry-annotation "ext:elfeed-curate" (entry))
+(declare-function elfeed-curate-set-entry-annotation "ext:elfeed-curate" (entry annotation))
 
 (defcustom elfeed-web-ng-enabled nil
   "If true, serve a web interface Elfeed with simple-httpd."
