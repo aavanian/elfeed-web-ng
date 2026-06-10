@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useCallback } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useCallback, useRef } from 'preact/hooks';
 import * as api from './lib/api';
 import * as store from './lib/store';
 import { SavedSearches } from './components/SavedSearches';
@@ -8,7 +8,16 @@ import { SearchBar } from './components/SearchBar';
 import { EntryList } from './components/EntryList';
 import { EntryContent } from './components/EntryContent';
 
+// Window scroll offset of the list at the moment an entry was opened, so we can
+// return the reader to where they were when they go back.
+let savedScrollY = 0;
+
 export function App() {
+  // Set when a back navigation should return the list to `savedScrollY`. The
+  // actual scroll happens in a layout effect, once the list-pane is back in the
+  // layout (on mobile it was display:none while the entry was open).
+  const pendingRestore = useRef(false);
+
   useEffect(() => {
     (async () => {
       try {
@@ -38,6 +47,9 @@ export function App() {
       const results = await api.search(q);
       store.entries.value = results;
       store.error.value = null;
+      // Fresh results: start at the top rather than a stale offset.
+      savedScrollY = 0;
+      window.scrollTo(0, 0);
     } finally {
       store.loading.value = false;
     }
@@ -50,11 +62,47 @@ export function App() {
   }, [doSearch]);
 
   const onSelectEntry = useCallback((entry) => {
+    // Only stash the list position and push history when coming from the list;
+    // switching between entries (desktop two-pane) must not stack history or
+    // overwrite the remembered offset.
+    if (!store.selectedEntry.value) {
+      savedScrollY = window.scrollY;
+      history.pushState({ entry: true }, '');
+    }
     store.selectedEntry.value = entry;
   }, []);
 
+  // Route both the in-app back button and the browser/system back button
+  // through popstate so there is a single dismissal path. Take manual control
+  // of scroll restoration so the browser's automatic restore doesn't fight us
+  // and clamp the position while the list is still hidden.
+  useEffect(() => {
+    const prevRestoration = 'scrollRestoration' in history ? history.scrollRestoration : null;
+    if (prevRestoration !== null) history.scrollRestoration = 'manual';
+
+    const onPop = () => {
+      if (store.selectedEntry.value) {
+        pendingRestore.current = true;
+        store.selectedEntry.value = null;
+      }
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      if (prevRestoration !== null) history.scrollRestoration = prevRestoration;
+    };
+  }, []);
+
+  // Restore the list scroll after the list-pane is back in the layout.
+  useLayoutEffect(() => {
+    if (pendingRestore.current && !store.selectedEntry.value) {
+      pendingRestore.current = false;
+      window.scrollTo(0, savedScrollY);
+    }
+  }, [store.selectedEntry.value]);
+
   const onBack = useCallback(() => {
-    store.selectedEntry.value = null;
+    history.back();
   }, []);
 
   const onFeedUpdate = useCallback(async () => {
