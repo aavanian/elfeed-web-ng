@@ -8,6 +8,16 @@ export default defineConfig({
   build: {
     outDir: '../web',
     emptyOutDir: true,
+    // Stable, non-hashed filenames so the straight build dir's symlinks stay
+    // valid across builds (no relinking needed). Cache-busting is handled by
+    // the service worker, not by filename hashing.
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/index.js',
+        chunkFileNames: 'assets/[name].js',
+        assetFileNames: 'assets/index[extname]',
+      },
+    },
   },
   server: {
     proxy: {
