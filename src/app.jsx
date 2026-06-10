@@ -93,6 +93,25 @@ export function App() {
     };
   }, []);
 
+  // While an entry fills the mobile single-pane view, lock the page to the
+  // viewport so only the content iframe scrolls — the outer (list) container
+  // behind it has nothing useful to scroll.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const update = () => {
+      const lock = !!store.selectedEntry.value && mq.matches;
+      document.documentElement.classList.toggle('reading', lock);
+    };
+    update();
+    mq.addEventListener('change', update);
+    const unsub = store.selectedEntry.subscribe(update);
+    return () => {
+      mq.removeEventListener('change', update);
+      unsub();
+      document.documentElement.classList.remove('reading');
+    };
+  }, []);
+
   // Restore the list scroll after the list-pane is back in the layout.
   useLayoutEffect(() => {
     if (pendingRestore.current && !store.selectedEntry.value) {
@@ -121,7 +140,7 @@ export function App() {
   const error = store.error.value;
 
   return (
-    <main class="container-fluid">
+    <main class={`container-fluid ${selected ? 'reading' : ''}`}>
       {error && <div class="error-banner" role="alert">{error}</div>}
       <header>
         <h1>Elfeed</h1>

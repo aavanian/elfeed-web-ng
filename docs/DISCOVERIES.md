@@ -40,3 +40,18 @@ container (and, if added via a third-party default browser, is not listed under
 Safari's Website Data) — the reliable bust is to delete and re-add the
 home-screen icon. Tracked for a proper fix (build-time cache versioning +
 network-first shell) in issue #11.
+
+## Swapping an iframe's `srcdoc` pushes a phantom history entry
+
+The entry reader mounted its content `<iframe>` immediately with `srcdoc=""`,
+then set `srcdoc` to the fetched HTML once it arrived. That second assignment is
+a *document navigation*, and the iframe's navigation lands on the shared session
+history — so opening one entry pushed **two** entries (the app's `pushState` plus
+the iframe's). The in-app Back then needed two taps: the first `history.back()`
+unwound the iframe navigation (no parent `popstate`, so the entry stayed open),
+only the second popped the app's state and dismissed the reader.
+
+Fix: don't mount the iframe until `srcdoc` is ready (show a placeholder while
+fetching), so it loads its final document exactly once. Verified via Playwright:
+`history.length` now grows by exactly 1 per entry opened, and a single Back tap
+returns to the list.

@@ -112,20 +112,26 @@ export function EntryContent({ entry, onBack }) {
         </div>
       </div>
 
-      <TagActions entry={entry} onTagsChanged={handleTagsChanged} />
+      <div class="entry-actions">
+        <TagActions entry={entry} onTagsChanged={handleTagsChanged} />
+        <AnnotationEditor entry={entry} onAnnotationChanged={handleAnnotationChanged} />
+      </div>
 
-      {contentUrl ? (
+      {!contentUrl ? (
+        <p class="secondary">No content available.</p>
+      ) : srcdoc === null ? (
+        // Wait for the content before mounting the iframe: swapping srcdoc on a
+        // live iframe counts as a navigation and pushes a phantom session-history
+        // entry, which then makes the in-app Back button need two taps.
+        <div class="loading-bar" />
+      ) : (
         <iframe
           class="content-frame"
-          srcdoc={srcdoc ?? ""}
+          srcdoc={srcdoc}
           sandbox="allow-popups"
           title="Entry content"
         />
-      ) : (
-        <p class="secondary">No content available.</p>
       )}
-
-      <AnnotationEditor entry={entry} onAnnotationChanged={handleAnnotationChanged} />
     </article>
   );
 }
