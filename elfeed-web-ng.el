@@ -447,24 +447,42 @@ and empty string for GET."
         (princ (json-encode '(:error "method not allowed")))
         (httpd-send-header t "application/json" 405))))))
 
+(defvar elfeed-web-ng--feed-done-timer nil
+  "Active completion-poll timer, or nil when no poll chain is running.
+Guards against stacking one polling chain per `feed-update' request.")
+
 (defun elfeed-web-ng--check-queue-done ()
   "Poll `elfeed-queue-count-total' until all feeds are fetched,
 then notify waiting clients."
   (if (zerop (elfeed-queue-count-total))
-      (elfeed-web-ng--notify-feed-done)
-    (run-at-time 1 nil #'elfeed-web-ng--check-queue-done)))
+      (progn
+        (setf elfeed-web-ng--feed-done-timer nil)
+        (elfeed-web-ng--notify-feed-done))
+    (setf elfeed-web-ng--feed-done-timer
+          (run-at-time 1 nil #'elfeed-web-ng--check-queue-done))))
+
+(defun elfeed-web-ng--monitor-feed-update ()
+  "Start a completion-poll chain unless one is already running."
+  (unless elfeed-web-ng--feed-done-timer
+    (elfeed-web-ng--check-queue-done)))
 
 (defservlet* elfeed/feed-update application/json ()
   "Trigger an elfeed feed update and start monitoring for completion.
 Only POST requests are accepted; this keeps a bare GET (an image tag or
-a link on a malicious page) from triggering a feed fetch."
+a link on a malicious page) from triggering a feed fetch.
+
+A fetch is launched only when none is already in flight: pressing the
+button again while feeds are still arriving would add load without
+yielding new data.  Either way a single completion-poll chain is kept
+running so `feed-update-done' clients are notified."
   (with-elfeed-web-ng
     (if (not (equal (caar httpd-request) "POST"))
         (progn
           (princ (json-encode '(:error 405)))
           (httpd-send-header t "application/json" 405))
-      (elfeed-update)
-      (elfeed-web-ng--check-queue-done)
+      (when (zerop (elfeed-queue-count-total))
+        (elfeed-update))
+      (elfeed-web-ng--monitor-feed-update)
       (princ (json-encode '(:status "updating"))))))
 
 (defservlet* elfeed/feed-update-done application/json ()
