@@ -18,10 +18,6 @@ export async function init() {
   return capabilities;
 }
 
-export function getCapabilities() {
-  return capabilities;
-}
-
 export function hasFeature(name) {
   return capabilities?.features?.includes(name) ?? false;
 }
@@ -29,12 +25,6 @@ export function hasFeature(name) {
 export async function search(query) {
   const res = await fetch(`${BASE}/search?q=${encodeURIComponent(query)}`);
   if (!res.ok) throw new Error(`Search failed: ${res.status}`);
-  return res.json();
-}
-
-export async function getThing(webid) {
-  const res = await fetch(`${BASE}/things/${webid}`);
-  if (!res.ok) throw new Error(`Thing not found: ${res.status}`);
   return res.json();
 }
 
@@ -55,13 +45,11 @@ export async function updateTags(add, remove, entries) {
 export async function feedUpdateDone() {
   const res = await fetch(`${BASE}/feed-update-done`);
   if (!res.ok) throw new Error(`Feed update done poll failed: ${res.status}`);
-  return res.json();
 }
 
 export async function markAllRead() {
   const res = await fetch(`${BASE}/mark-all-read`, { method: 'POST' });
   if (!res.ok) throw new Error(`Mark all read failed: ${res.status}`);
-  return res.json();
 }
 
 export async function getSavedSearches() {
@@ -71,17 +59,9 @@ export async function getSavedSearches() {
   return res.json();
 }
 
-export async function getAnnotation(webid) {
-  if (!hasFeature('annotations')) return null;
-  const res = await fetch(`${BASE}/annotation/${webid}`);
-  if (!res.ok) return null;
-  return res.json();
-}
-
 export async function feedUpdate() {
   const res = await fetch(`${BASE}/feed-update`, { method: 'POST' });
   if (!res.ok) throw new Error(`Feed update failed: ${res.status}`);
-  return res.json();
 }
 
 export async function setAnnotation(webid, text) {
