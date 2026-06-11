@@ -55,8 +55,40 @@ Add `elfeed-web-ng` to your `load-path` and configure:
 - `elfeed-web-ng-saved-searches` — list of saved searches displayed as quick-access buttons
 - `elfeed-web-ng-limit` — maximum entries per search (default: 512)
 - `httpd-host` / `httpd-port` — server binding (from simple-httpd)
+- `elfeed-web-ng-allowed-hosts` — hostnames permitted in the `Host`/`Origin` headers (default: derived)
+- `elfeed-web-ng-allow-public-bind` — silence the all-interfaces bind warning (default: `nil`)
 
 **Note:** `elfeed-web-ng-stop` stops the underlying simple-httpd server, which is shared across all packages that use it (e.g., impatient-mode, skewer-mode). If you need to keep simple-httpd running for other packages, set `elfeed-web-ng-enabled` to `nil` instead.
+
+### Security
+
+This interface has **no authentication** — it assumes it is served on a private
+interface (loopback or a single-user tailnet). Two safeguards reduce the ways to
+get this wrong; neither is a substitute for keeping the bind address private.
+
+**Host/Origin allowlist.** Requests whose `Host` header names a host outside
+`elfeed-web-ng-allowed-hosts` are rejected (blocking DNS-rebinding), and the same
+list gates the `Origin` header on cross-site requests (blocking CSRF). When the
+variable is `nil` (the default) the allowlist is derived from `httpd-host` plus
+loopback names — so the common single-bind-address setup needs no configuration.
+If you reach the interface under more than one name (for example the raw tailnet
+IP *and* a Tailscale MagicDNS name), list every hostname you use:
+
+```elisp
+(setq elfeed-web-ng-allowed-hosts
+      '("100.64.0.1" "machine-name.tailnet-name.ts.net"))
+```
+
+A rejected request returns a generic `403`; the host it was addressed to is
+recorded in the `*httpd*` log, next to the request entry that shows the client
+address, so you can see exactly what to add.
+
+**All-interfaces bind warning.** If `httpd-host` is unset or a wildcard
+(`0.0.0.0` / `::`) when you start the server, a warning fires, since the
+unauthenticated interface is then exposed on every network the machine joins.
+Pin `httpd-host` to a private address, or set `elfeed-web-ng-allow-public-bind`
+to acknowledge a deliberate public bind (e.g. behind an authenticating reverse
+proxy).
 
 ## Development
 

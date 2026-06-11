@@ -34,6 +34,7 @@
 
 (require 'cl-lib)
 (require 'json)
+(require 'url-parse)
 (require 'simple-httpd)
 (require 'elfeed-db)
 (require 'elfeed-search)
@@ -56,6 +57,35 @@ Each element is a plist with :label and :filter keys.
 Example: \\='((:label \"Unread\" :filter \"+unread\"))"
   :group 'elfeed
   :type '(repeat (plist :key-type symbol :value-type string)))
+
+(defcustom elfeed-web-ng-allowed-hosts nil
+  "Hostnames permitted in the HTTP Host and Origin request headers.
+
+Requests whose Host header names a host outside this list are rejected,
+which blocks DNS-rebinding attacks; the same list gates the Origin
+header on cross-site requests, which blocks CSRF.
+
+When nil the allowlist is derived automatically from `httpd-host' (when
+it names a specific address) plus the loopback names.  That default
+serves the common case of a single private bind address with no
+configuration.  Set this to a list of hostname strings to permit
+additional names, for example a Tailscale MagicDNS name reached
+alongside the raw tailnet IP.  Ports are ignored; list bare hostnames.
+
+Loopback names are always permitted: they cannot be the target of a
+DNS-rebinding attack, since the browser only sends them when the user
+genuinely navigated to a loopback address."
+  :group 'elfeed
+  :type '(choice (const :tag "Auto (derive from `httpd-host')" nil)
+                 (repeat string)))
+
+(defcustom elfeed-web-ng-allow-public-bind nil
+  "When non-nil, suppress the warning about binding to all interfaces.
+`elfeed-web-ng-start' warns when the server listens on every network
+interface with no authentication.  Set this to acknowledge a deliberate
+public bind (for example behind an authenticating reverse proxy)."
+  :group 'elfeed
+  :type 'boolean)
 
 (defvar elfeed-web-ng-data-root
   (expand-file-name "web" (file-name-directory load-file-name))
@@ -123,14 +153,89 @@ allowed set, preventing unbounded obarray growth via `intern'."
        (<= (length tag) 64)
        (string-match-p "\\`[-a-zA-Z0-9_★]+\\'" tag)))
 
+(defconst elfeed-web-ng--loopback-hosts
+  '("localhost" "127.0.0.1" "::1" "ip6-localhost")
+  "Loopback names always accepted in the Host and Origin headers.")
+
+(defun elfeed-web-ng--header (name &optional request)
+  "Return the value of request header NAME, case-insensitively, or nil.
+REQUEST is the parsed request alist; it defaults to `httpd-request',
+which `defservlet*' binds but plain `defservlet' does not."
+  (cadr (assoc-string name (or request httpd-request) t)))
+
+(defun elfeed-web-ng--strip-port (host)
+  "Return the hostname part of HOST, dropping any \":port\" suffix.
+Handles bracketed IPv6 literals such as \"[::1]:8080\"."
+  (cond
+   ((null host) nil)
+   ((string-prefix-p "[" host)
+    (if (string-match "\\`\\(\\[[^]]*\\]\\)" host) (match-string 1 host) host))
+   ((string-match "\\`\\([^:]*\\):[0-9]+\\'" host) (match-string 1 host))
+   (t host)))
+
+(defun elfeed-web-ng--effective-allowed-hosts ()
+  "Return the normalized list of permitted hostnames.
+Combines the loopback names with `elfeed-web-ng-allowed-hosts', or, when
+that is nil, with `httpd-host' if it names a specific address."
+  (let ((extra (if elfeed-web-ng-allowed-hosts
+                   elfeed-web-ng-allowed-hosts
+                 (and (stringp httpd-host)
+                      (not (member httpd-host '("0.0.0.0" "::")))
+                      (list httpd-host)))))
+    (mapcar (lambda (h) (downcase (elfeed-web-ng--strip-port h)))
+            (append elfeed-web-ng--loopback-hosts extra))))
+
+(defun elfeed-web-ng--host-allowed-p (host)
+  "Return non-nil if the Host header HOST is permitted."
+  (let ((name (and host (downcase (elfeed-web-ng--strip-port host)))))
+    (and name (member name (elfeed-web-ng--effective-allowed-hosts)) t)))
+
+(defun elfeed-web-ng--origin-allowed-p (origin)
+  "Return non-nil if ORIGIN is absent or names a permitted host.
+A missing Origin is permitted; the Host check guards those requests.  An
+opaque \"null\" origin, or one naming a host outside the allowlist, is
+rejected so cross-site requests cannot drive state-changing endpoints."
+  (or (null origin)
+      (let ((host (and (not (equal origin "null"))
+                       (ignore-errors
+                         (url-host (url-generic-parse-url origin))))))
+        (and host
+             (member (downcase host) (elfeed-web-ng--effective-allowed-hosts))
+             t))))
+
+(defun elfeed-web-ng--reject (header value)
+  "Send a generic 403 for a request rejected by the HEADER allowlist.
+VALUE is the offending header value.  It is recorded in the *httpd* log
+next to the request entry (which carries the client address) rather than
+returned, so the response reveals neither it nor the allowlist.  The
+logged key names what VALUE is -- the host the request was addressed to,
+or the cross-site origin -- not the client that sent it."
+  (httpd-log
+   (list 'elfeed-web-ng-rejected
+         (list (if (equal header "Host") 'requested-host 'origin) value)
+         '(reason "not in elfeed-web-ng-allowed-hosts")))
+  (princ (concat
+          "403 Forbidden\n\n"
+          "This request was rejected because its " header " header is not\n"
+          "in the allowlist.  If you are running this service, add the\n"
+          "hostname to `elfeed-web-ng-allowed-hosts'.  See the README.\n"))
+  (httpd-send-header t "text/plain" 403))
+
 (defmacro with-elfeed-web-ng (&rest body)
-  "Only execute BODY if `elfeed-web-ng-enabled' is true."
+  "Execute BODY for a permitted, enabled request, else send an error.
+Rejects the request when its Host or Origin header falls outside
+`elfeed-web-ng-allowed-hosts', and sends 403 when the interface is
+disabled."
   (declare (indent 0))
-  `(if (not elfeed-web-ng-enabled)
-       (progn
-         (princ (json-encode '(:error 403)))
-         (httpd-send-header t "application/json" 403))
-     ,@body))
+  `(cond
+    ((not (elfeed-web-ng--host-allowed-p (elfeed-web-ng--header "Host")))
+     (elfeed-web-ng--reject "Host" (elfeed-web-ng--header "Host")))
+    ((not (elfeed-web-ng--origin-allowed-p (elfeed-web-ng--header "Origin")))
+     (elfeed-web-ng--reject "Origin" (elfeed-web-ng--header "Origin")))
+    ((not elfeed-web-ng-enabled)
+     (princ (json-encode '(:error 403)))
+     (httpd-send-header t "application/json" 403))
+    (t ,@body)))
 
 (defservlet* elfeed/things/:webid application/json ()
   "Return a requested thing (entry or feed)."
@@ -189,11 +294,17 @@ allowed set, preventing unbounded obarray growth via `intern'."
           (princ (json-encode '(:status "done"))))))))
 
 (defservlet* elfeed/mark-all-read application/json ()
-  "Marks all entries in the database as read (quick-and-dirty)."
+  "Marks all entries in the database as read (quick-and-dirty).
+Only POST requests are accepted; this keeps a bare GET (an image tag or
+a link on a malicious page) from clearing unread state."
   (with-elfeed-web-ng
-    (with-elfeed-db-visit (e _)
-      (elfeed-untag e 'unread))
-    (princ (json-encode t))))
+    (if (not (equal (caar httpd-request) "POST"))
+        (progn
+          (princ (json-encode '(:error 405)))
+          (httpd-send-header t "application/json" 405))
+      (with-elfeed-db-visit (e _)
+        (elfeed-untag e 'unread))
+      (princ (json-encode t)))))
 
 (defservlet* elfeed/tags application/json ()
   "Endpoint for adding and removing tags on zero or more entries.
@@ -305,11 +416,17 @@ then notify waiting clients."
     (run-at-time 1 nil #'elfeed-web-ng--check-queue-done)))
 
 (defservlet* elfeed/feed-update application/json ()
-  "Trigger an elfeed feed update and start monitoring for completion."
+  "Trigger an elfeed feed update and start monitoring for completion.
+Only POST requests are accepted; this keeps a bare GET (an image tag or
+a link on a malicious page) from triggering a feed fetch."
   (with-elfeed-web-ng
-    (elfeed-update)
-    (elfeed-web-ng--check-queue-done)
-    (princ (json-encode '(:status "updating")))))
+    (if (not (equal (caar httpd-request) "POST"))
+        (progn
+          (princ (json-encode '(:error 405)))
+          (httpd-send-header t "application/json" 405))
+      (elfeed-update)
+      (elfeed-web-ng--check-queue-done)
+      (princ (json-encode '(:status "updating"))))))
 
 (defservlet* elfeed/feed-update-done application/json ()
   "Long-poll endpoint that responds when a feed update completes.
@@ -322,9 +439,13 @@ immediately rather than parking the process with nothing to drain it."
 
 (defservlet elfeed text/plain (uri-path _ request)
   "Serve static files from `elfeed-web-ng-data-root'."
-  (if (not elfeed-web-ng-enabled)
-      (insert "Elfeed web interface is disabled.\n"
-              "Set `elfeed-web-ng-enabled' to true to enable it.")
+  (cond
+   ((not (elfeed-web-ng--host-allowed-p (elfeed-web-ng--header "Host" request)))
+    (elfeed-web-ng--reject "Host" (elfeed-web-ng--header "Host" request)))
+   ((not elfeed-web-ng-enabled)
+    (insert "Elfeed web interface is disabled.\n"
+            "Set `elfeed-web-ng-enabled' to true to enable it."))
+   (t
     (let ((base "/elfeed/"))
       (if (< (length uri-path) (length base))
           (httpd-redirect t base)
@@ -335,17 +456,35 @@ immediately rather than parking the process with nothing to drain it."
                  (expand-file-name "index.html" elfeed-web-ng-data-root))
                 (httpd-send-header t "text/html" 200
                                    :Cache-Control "no-cache, no-store, must-revalidate"))
-            (httpd-serve-root t elfeed-web-ng-data-root path request)))))))
+            (httpd-serve-root t elfeed-web-ng-data-root path request))))))))
 
 (defun httpd/favicon.ico (proc &rest _)
   "Redirect /favicon.ico to /elfeed/favicon.ico."
   (httpd-redirect proc "/elfeed/icons/favicon_dark.svg"))
 
 
+(defun elfeed-web-ng--warn-public-bind ()
+  "Warn when serving on all interfaces with no authentication.
+Suppressed by `elfeed-web-ng-allow-public-bind'."
+  (when (and (not elfeed-web-ng-allow-public-bind)
+             (or (null httpd-host)
+                 (member httpd-host '("0.0.0.0" "::"))))
+    (display-warning
+     'elfeed-web-ng
+     (concat
+      "Serving on all network interfaces (`httpd-host' is unset or "
+      "wildcard) with no authentication.\n"
+      "Anyone who can reach this machine can read and modify your feeds.\n"
+      "Pin `httpd-host' to a private address (loopback or a tailnet IP), "
+      "or set `elfeed-web-ng-allow-public-bind' to silence this warning. "
+      "See the README.")
+     :warning)))
+
 ;;;###autoload
 (defun elfeed-web-ng-start ()
   "Start the Elfeed web interface server."
   (interactive)
+  (elfeed-web-ng--warn-public-bind)
   (httpd-start)
   (setf elfeed-web-ng-enabled t))
 

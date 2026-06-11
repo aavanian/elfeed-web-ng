@@ -59,7 +59,7 @@ export async function feedUpdateDone() {
 }
 
 export async function markAllRead() {
-  const res = await fetch(`${BASE}/mark-all-read`);
+  const res = await fetch(`${BASE}/mark-all-read`, { method: 'POST' });
   if (!res.ok) throw new Error(`Mark all read failed: ${res.status}`);
   return res.json();
 }
@@ -79,7 +79,7 @@ export async function getAnnotation(webid) {
 }
 
 export async function feedUpdate() {
-  const res = await fetch(`${BASE}/feed-update`);
+  const res = await fetch(`${BASE}/feed-update`, { method: 'POST' });
   if (!res.ok) throw new Error(`Feed update failed: ${res.status}`);
   return res.json();
 }
