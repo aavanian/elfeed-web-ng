@@ -8,8 +8,19 @@ A modern web interface for [Elfeed](https://github.com/skeeto/elfeed), the Emacs
 - Saved searches with quick-access buttons
 - Tag management (read/unread, star, later, custom tags)
 - Annotation support (requires [elfeed-curate](https://github.com/rnadler/elfeed-curate))
-- Backward compatible with the original elfeed-web server (graceful degradation)
 - Responsive desktop/mobile layout
+
+## Compatibility
+
+This interface requires the `elfeed-web-ng` Emacs backend; it is **no longer a
+drop-in replacement for the upstream [elfeed-web](https://github.com/skeeto/elfeed)
+server**. The "Update feeds" button drives an `elfeed-web-ng`-only feed-update
+endpoint that triggers `elfeed-update` server-side, which upstream elfeed-web
+does not provide.
+
+The last commit that still degraded gracefully against a stock elfeed-web
+backend is tagged [`legacy-compat`](https://github.com/aavanian/elfeed-web-ng/releases/tag/legacy-compat).
+Check out that tag if you need to run the UI against upstream elfeed-web.
 
 ## Installation
 
