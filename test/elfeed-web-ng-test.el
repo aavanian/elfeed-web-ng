@@ -102,5 +102,24 @@
   (should-not (elfeed-web-ng--valid-ref-p ".."))
   (should-not (elfeed-web-ng--valid-ref-p nil)))
 
+;;; Webid validation.
+
+(ert-deftest elfeed-web-ng-test-valid-webid ()
+  "Only a 12-character webid in the base64url-derived alphabet is accepted."
+  ;; The alphabet `elfeed-web-ng-make-webid' emits: base64 with / and +
+  ;; rewritten to - and _, truncated to 12 characters.
+  (should (elfeed-web-ng--valid-webid-p "aB3-_xyz0123"))
+  (should (elfeed-web-ng--valid-webid-p (make-string 12 ?a)))
+  ;; Wrong length.
+  (should-not (elfeed-web-ng--valid-webid-p (make-string 11 ?a)))
+  (should-not (elfeed-web-ng--valid-webid-p (make-string 13 ?a)))
+  (should-not (elfeed-web-ng--valid-webid-p ""))
+  ;; Characters outside the alphabet, including the path-bearing ones a
+  ;; lookup must never feed to the database scan.
+  (should-not (elfeed-web-ng--valid-webid-p "aaaaaa/aaaaa"))
+  (should-not (elfeed-web-ng--valid-webid-p "aaaaaa.aaaaa"))
+  (should-not (elfeed-web-ng--valid-webid-p "aaaaaa+aaaaa"))
+  (should-not (elfeed-web-ng--valid-webid-p nil)))
+
 (provide 'elfeed-web-ng-test)
 ;;; elfeed-web-ng-test.el ends here

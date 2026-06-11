@@ -110,18 +110,42 @@ public bind (for example behind an authenticating reverse proxy)."
     (setf (gethash webid elfeed-web-ng-webid-map) thing)
     webid))
 
+(defvar elfeed-web-ng--webid-index-stamp nil
+  "Database `:last-update' time when the webid map was last fully built.
+While it matches the current stamp, a webid absent from
+`elfeed-web-ng-webid-map' is known not to exist, so a lookup miss costs a
+hash probe rather than a rescan of the whole database.")
+
+(defun elfeed-web-ng--valid-webid-p (webid)
+  "Return non-nil if WEBID has the shape `elfeed-web-ng-make-webid' makes.
+Rejecting other strings turns a malformed request into a cheap miss
+instead of a trigger for the database scan below."
+  (and (stringp webid)
+       (let ((case-fold-search nil))
+         (string-match-p "\\`[A-Za-z0-9_-]\\{12\\}\\'" webid))))
+
+(defun elfeed-web-ng--ensure-webid-index ()
+  "Register every entry's and feed's webid, at most once per DB revision.
+Webids are normally added to `elfeed-web-ng-webid-map' as things are
+serialized, but a client may hold one the server has not computed since
+its last restart.  Building the whole map on the first such miss lets it
+and every later miss resolve by hash lookup, rather than rescanning and
+re-hashing the database on each request."
+  (let ((stamp (plist-get elfeed-db :last-update)))
+    (unless (equal stamp elfeed-web-ng--webid-index-stamp)
+      (with-elfeed-db-visit (entry _)
+        (elfeed-web-ng-make-webid entry))
+      (cl-loop for feed hash-values of elfeed-db-feeds
+               do (elfeed-web-ng-make-webid feed))
+      (setf elfeed-web-ng--webid-index-stamp stamp))))
+
 (defun elfeed-web-ng-lookup (webid)
-  "Lookup a thing by its WEBID."
-  (let ((thing (gethash webid elfeed-web-ng-webid-map)))
-    (if thing
-        thing
-      (or (with-elfeed-db-visit (entry _)
-            (when (string= webid (elfeed-web-ng-make-webid entry))
-              (setf (gethash webid elfeed-web-ng-webid-map)
-                    (elfeed-db-return entry))))
-          (cl-loop for feed hash-values of elfeed-db-feeds
-                   when (string= (elfeed-web-ng-make-webid feed) webid)
-                   return (setf (gethash webid elfeed-web-ng-webid-map) feed))))))
+  "Lookup a thing by its WEBID, or nil when no entry or feed matches."
+  (when (elfeed-web-ng--valid-webid-p webid)
+    (or (gethash webid elfeed-web-ng-webid-map)
+        (progn
+          (elfeed-web-ng--ensure-webid-index)
+          (gethash webid elfeed-web-ng-webid-map)))))
 
 (defun elfeed-web-ng-for-json (thing)
   "Prepare THING for JSON serialization."
