@@ -89,14 +89,14 @@ public bind (for example behind an authenticating reverse proxy)."
   :group 'elfeed
   :type 'boolean)
 
-(defvar elfeed-web-ng-data-root
+(defvar elfeed-web-ng--data-root
   (expand-file-name "web" (file-name-directory load-file-name))
   "Location of the static Elfeed web data files.")
 
-(defvar elfeed-web-ng-webid-map (make-hash-table :test 'equal)
+(defvar elfeed-web-ng--webid-map (make-hash-table :test 'equal)
   "Track the mapping between entries and IDs.")
 
-(defvar elfeed-web-ng-webid-seed
+(defvar elfeed-web-ng--webid-seed
   (let ((items (list (random) (float-time) (emacs-pid) (system-name))))
     (secure-hash 'sha1 (format "%S" items)))
   "Used to make webids less predictable.")
@@ -104,18 +104,18 @@ public bind (for example behind an authenticating reverse proxy)."
 (defun elfeed-web-ng-make-webid (thing)
   "Compute a unique web ID for THING."
   (let* ((thing-id (prin1-to-string (aref thing 1)))
-         (keyed (concat thing-id elfeed-web-ng-webid-seed))
+         (keyed (concat thing-id elfeed-web-ng--webid-seed))
          (hash (base64-encode-string (secure-hash 'sha1 keyed nil nil t)))
          (no-slash (replace-regexp-in-string "/" "-" hash))
          (no-plus (replace-regexp-in-string "\\+" "_" no-slash))
          (webid (substring no-plus 0 12)))
-    (setf (gethash webid elfeed-web-ng-webid-map) thing)
+    (setf (gethash webid elfeed-web-ng--webid-map) thing)
     webid))
 
 (defvar elfeed-web-ng--webid-index-stamp nil
   "Database `:last-update' time when the webid map was last fully built.
 While it matches the current stamp, a webid absent from
-`elfeed-web-ng-webid-map' is known not to exist, so a lookup miss costs a
+`elfeed-web-ng--webid-map' is known not to exist, so a lookup miss costs a
 hash probe rather than a rescan of the whole database.")
 
 (defun elfeed-web-ng--valid-webid-p (webid)
@@ -128,7 +128,7 @@ instead of a trigger for the database scan below."
 
 (defun elfeed-web-ng--ensure-webid-index ()
   "Register every entry's and feed's webid, at most once per DB revision.
-Webids are normally added to `elfeed-web-ng-webid-map' as things are
+Webids are normally added to `elfeed-web-ng--webid-map' as things are
 serialized, but a client may hold one the server has not computed since
 its last restart.  Building the whole map on the first such miss lets it
 and every later miss resolve by hash lookup, rather than rescanning and
@@ -144,10 +144,10 @@ re-hashing the database on each request."
 (defun elfeed-web-ng-lookup (webid)
   "Lookup a thing by its WEBID, or nil when no entry or feed matches."
   (when (elfeed-web-ng--valid-webid-p webid)
-    (or (gethash webid elfeed-web-ng-webid-map)
+    (or (gethash webid elfeed-web-ng--webid-map)
         (progn
           (elfeed-web-ng--ensure-webid-index)
-          (gethash webid elfeed-web-ng-webid-map)))))
+          (gethash webid elfeed-web-ng--webid-map)))))
 
 (defun elfeed-web-ng-for-json (thing)
   "Prepare THING for JSON serialization."
@@ -256,7 +256,7 @@ or the cross-site origin -- not the client that sent it."
           "hostname to `elfeed-web-ng-allowed-hosts'.  See the README.\n"))
   (httpd-send-header t "text/plain" 403))
 
-(defmacro with-elfeed-web-ng (&rest body)
+(defmacro elfeed-web-ng--with (&rest body)
   "Execute BODY for a permitted, enabled request, else send an error.
 Rejects the request when its Host or Origin header falls outside
 `elfeed-web-ng-allowed-hosts', and sends 403 when the interface is
@@ -272,7 +272,7 @@ disabled."
      (httpd-send-header t "application/json" 403))
     (t ,@body)))
 
-(defmacro with-elfeed-web-ng-method (method &rest body)
+(defmacro elfeed-web-ng--with-method (method &rest body)
   "Execute BODY when the request method is METHOD, else send a 405.
 Requiring an explicit method keeps a bare GET -- an image tag or a link
 on a malicious page -- from triggering a state change."
@@ -284,12 +284,12 @@ on a malicious page -- from triggering a state change."
 
 (defservlet* elfeed/things/:webid application/json ()
   "Return a requested thing (entry or feed)."
-  (with-elfeed-web-ng
+  (elfeed-web-ng--with
     (princ (json-encode (elfeed-web-ng-for-json (elfeed-web-ng-lookup webid))))))
 
 (defservlet* elfeed/content/:ref text/html ()
   "Serve content-addressable content at REF."
-  (with-elfeed-web-ng
+  (elfeed-web-ng--with
     (let ((content (and (elfeed-web-ng--valid-ref-p ref)
                         (elfeed-deref (elfeed-ref--create :id ref)))))
       (if content
@@ -319,7 +319,7 @@ on a malicious page -- from triggering a state change."
 
 (defservlet* elfeed/search application/json (q)
   "Perform a search operation with Q and return the results."
-  (with-elfeed-web-ng
+  (elfeed-web-ng--with
     (let* ((results ())
            (modified-q (format "#%d %s" elfeed-web-ng-limit q))
            (filter (elfeed-search-parse-filter modified-q))
@@ -333,13 +333,13 @@ on a malicious page -- from triggering a state change."
         (cl-coerce
          (mapcar #'elfeed-web-ng-for-json (nreverse results)) 'vector))))))
 
-(defvar elfeed-web-ng-feed-done-waiting ()
+(defvar elfeed-web-ng--feed-done-waiting ()
   "Clients waiting for feed update completion.")
 
 (defun elfeed-web-ng--notify-feed-done ()
   "Respond to all clients waiting for feed update completion."
-  (while elfeed-web-ng-feed-done-waiting
-    (let ((proc (pop elfeed-web-ng-feed-done-waiting)))
+  (while elfeed-web-ng--feed-done-waiting
+    (let ((proc (pop elfeed-web-ng--feed-done-waiting)))
       (ignore-errors
         (with-httpd-buffer proc "application/json"
           (princ (json-encode '(:status "done"))))))))
@@ -348,8 +348,8 @@ on a malicious page -- from triggering a state change."
   "Marks all entries in the database as read (quick-and-dirty).
 Only POST requests are accepted; this keeps a bare GET (an image tag or
 a link on a malicious page) from clearing unread state."
-  (with-elfeed-web-ng
-    (with-elfeed-web-ng-method "POST"
+  (elfeed-web-ng--with
+    (elfeed-web-ng--with-method "POST"
       (with-elfeed-db-visit (e _)
         (elfeed-untag e 'unread))
       (princ (json-encode t)))))
@@ -364,7 +364,7 @@ object with any of these properties:
   entries : array of web IDs for entries to be modified
 
 The current set of tags for each entry will be returned."
-  (with-elfeed-web-ng
+  (elfeed-web-ng--with
     (let* ((request (caar httpd-request))
            (content (decode-coding-string
                      (cadr (assoc "Content" httpd-request)) 'utf-8))
@@ -393,15 +393,15 @@ The current set of tags for each entry will be returned."
                  collect (cons webid (elfeed-entry-tags entry)) into result
                  finally (princ (if result (json-encode result) "{}")))))))
 
-(defvar elfeed-web-ng-version "1.0.0"
+(defvar elfeed-web-ng--version "1.0.0"
   "Version of elfeed-web-ng.")
 
 (defservlet* elfeed/api application/json ()
   "Return server capabilities for feature negotiation."
-  (with-elfeed-web-ng
+  (elfeed-web-ng--with
     (princ (json-encode
             (list :server "elfeed-web-ng"
-                  :version elfeed-web-ng-version
+                  :version elfeed-web-ng--version
                   :features (vconcat
                              (delq nil
                                    (list "saved-searches"
@@ -412,7 +412,7 @@ The current set of tags for each entry will be returned."
 
 (defservlet* elfeed/saved-searches application/json ()
   "Return the configured saved searches."
-  (with-elfeed-web-ng
+  (elfeed-web-ng--with
     (princ (json-encode
             (vconcat
              (mapcar (lambda (s)
@@ -424,7 +424,7 @@ The current set of tags for each entry will be returned."
   "GET or PUT an annotation on an entry.
 Requires elfeed-curate to be loaded; returns 501 otherwise for PUT,
 and empty string for GET."
-  (with-elfeed-web-ng
+  (elfeed-web-ng--with
     (let* ((method (caar httpd-request))
            (entry (elfeed-web-ng-lookup webid)))
       (cond
@@ -484,8 +484,8 @@ A fetch is launched only when none is already in flight: pressing the
 button again while feeds are still arriving would add load without
 yielding new data.  Either way a single completion-poll chain is kept
 running so `feed-update-done' clients are notified."
-  (with-elfeed-web-ng
-    (with-elfeed-web-ng-method "POST"
+  (elfeed-web-ng--with
+    (elfeed-web-ng--with-method "POST"
       (when (zerop (elfeed-queue-count-total))
         (elfeed-update))
       (elfeed-web-ng--monitor-feed-update)
@@ -495,13 +495,13 @@ running so `feed-update-done' clients are notified."
   "Long-poll endpoint that responds when a feed update completes.
 If the update already finished before this request arrived, respond
 immediately rather than parking the process with nothing to drain it."
-  (with-elfeed-web-ng
+  (elfeed-web-ng--with
     (if (zerop (elfeed-queue-count-total))
         (princ (json-encode '(:status "done")))
-      (push (httpd-discard-buffer) elfeed-web-ng-feed-done-waiting))))
+      (push (httpd-discard-buffer) elfeed-web-ng--feed-done-waiting))))
 
 (defservlet elfeed text/plain (uri-path _ request)
-  "Serve static files from `elfeed-web-ng-data-root'."
+  "Serve static files from `elfeed-web-ng--data-root'."
   (cond
    ((not (elfeed-web-ng--host-allowed-p (elfeed-web-ng--header "Host" request)))
     (elfeed-web-ng--reject "Host" (elfeed-web-ng--header "Host" request)))
@@ -516,10 +516,10 @@ immediately rather than parking the process with nothing to drain it."
           (if (or (string= path "/") (string= path "/index.html"))
               (progn
                 (insert-file-contents
-                 (expand-file-name "index.html" elfeed-web-ng-data-root))
+                 (expand-file-name "index.html" elfeed-web-ng--data-root))
                 (httpd-send-header t "text/html" 200
                                    :Cache-Control "no-cache, no-store, must-revalidate"))
-            (httpd-serve-root t elfeed-web-ng-data-root path request))))))))
+            (httpd-serve-root t elfeed-web-ng--data-root path request))))))))
 
 (defun httpd/favicon.ico (proc &rest _)
   "Redirect /favicon.ico to /elfeed/favicon.ico."
