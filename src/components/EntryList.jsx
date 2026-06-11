@@ -3,11 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'preact/hooks';
 import * as store from '../lib/store';
 import * as api from '../lib/api';
-
-function formatDate(ms) {
-  const d = new Date(ms);
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
+import { formatDate } from '../lib/format';
 
 const SWIPE_THRESHOLD = 80;
 

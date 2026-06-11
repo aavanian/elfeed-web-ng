@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import * as api from "../lib/api";
 import * as store from "../lib/store";
+import { formatDate } from "../lib/format";
 import { TagActions } from "./TagActions";
 import { AnnotationEditor } from "./AnnotationEditor";
 
@@ -48,14 +49,6 @@ function rewriteLinks(html) {
   return doc.body.innerHTML;
 }
 
-function formatDate(ms) {
-  return new Date(ms).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
 export function EntryContent({ entry, onBack }) {
   const contentUrl = entry.content ? api.getContentUrl(entry.content) : null;
   const [srcdoc, setSrcdoc] = useState(null);
@@ -99,7 +92,7 @@ export function EntryContent({ entry, onBack }) {
         <div class="content-meta">
           <span>{entry.feed?.title}</span>
           {" — "}
-          <span>{formatDate(entry.date)}</span>
+          <span>{formatDate(entry.date, { withYear: true })}</span>
         </div>
       </div>
 
