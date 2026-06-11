@@ -153,6 +153,15 @@ allowed set, preventing unbounded obarray growth via `intern'."
        (<= (length tag) 64)
        (string-match-p "\\`[-a-zA-Z0-9_★]+\\'" tag)))
 
+(defun elfeed-web-ng--valid-ref-p (ref)
+  "Return non-nil if REF is a well-formed content reference.
+Elfeed content refs are SHA-1 hex digests.  Rejecting anything else
+keeps a crafted ref from escaping the content store via path components
+such as slashes or \"..\" when it is concatenated into a filename."
+  (and (stringp ref)
+       (let ((case-fold-search nil))
+         (string-match-p "\\`[0-9a-f]\\{40\\}\\'" ref))))
+
 (defconst elfeed-web-ng--loopback-hosts
   '("localhost" "127.0.0.1" "::1" "ip6-localhost")
   "Loopback names always accepted in the Host and Origin headers.")
@@ -245,7 +254,8 @@ disabled."
 (defservlet* elfeed/content/:ref text/html ()
   "Serve content-addressable content at REF."
   (with-elfeed-web-ng
-    (let ((content (elfeed-deref (elfeed-ref--create :id ref))))
+    (let ((content (and (elfeed-web-ng--valid-ref-p ref)
+                        (elfeed-deref (elfeed-ref--create :id ref)))))
       (if content
           (progn
             (princ (concat

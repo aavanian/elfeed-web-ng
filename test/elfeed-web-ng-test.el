@@ -79,5 +79,28 @@
     (should-not (elfeed-web-ng--origin-allowed-p "http://evil.example.com"))
     (should-not (elfeed-web-ng--origin-allowed-p "null"))))
 
+;;; Content ref validation.
+
+(ert-deftest elfeed-web-ng-test-valid-ref ()
+  "Only a bare SHA-1 hex digest is accepted as a content ref."
+  ;; A real elfeed ref: 40 lowercase hex characters.
+  (should (elfeed-web-ng--valid-ref-p (make-string 40 ?a)))
+  (should (elfeed-web-ng--valid-ref-p
+           "da39a3ee5e6b4b0d3255bfef95601890afd80709"))
+  ;; Wrong length.
+  (should-not (elfeed-web-ng--valid-ref-p (make-string 39 ?a)))
+  (should-not (elfeed-web-ng--valid-ref-p (make-string 41 ?a)))
+  (should-not (elfeed-web-ng--valid-ref-p ""))
+  ;; Outside the hex alphabet: uppercase, and the digits a SHA-1 never holds.
+  (should-not (elfeed-web-ng--valid-ref-p (make-string 40 ?A)))
+  (should-not (elfeed-web-ng--valid-ref-p (concat (make-string 39 ?a) "g")))
+  ;; Path components that would escape the content store once concatenated
+  ;; into a filename, including the double-encoded form that survives
+  ;; simple-httpd's split-then-decode handling.
+  (should-not (elfeed-web-ng--valid-ref-p "../../../etc/passwd"))
+  (should-not (elfeed-web-ng--valid-ref-p "..%2f..%2fetc%2fpasswd"))
+  (should-not (elfeed-web-ng--valid-ref-p ".."))
+  (should-not (elfeed-web-ng--valid-ref-p nil)))
+
 (provide 'elfeed-web-ng-test)
 ;;; elfeed-web-ng-test.el ends here
