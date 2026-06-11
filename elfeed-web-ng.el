@@ -8,7 +8,7 @@
 
 ;; URL: https://github.com/aavanian/elfeed-web-ng
 ;; Version: 1.0.0
-;; Package-Requires: ((simple-httpd "1.5.1") (elfeed "3.2.0") (emacs "25.1"))
+;; Package-Requires: ((simple-httpd "1.5.1") (elfeed "3.2.0") (emacs "29.2"))
 
 ;;; Commentary:
 
@@ -33,6 +33,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)
 (require 'json)
 (require 'url-parse)
 (require 'simple-httpd)
@@ -101,6 +102,12 @@ public bind (for example behind an authenticating reverse proxy)."
     (secure-hash 'sha1 (format "%S" items)))
   "Used to make webids less predictable.")
 
+(defvar elfeed-web-ng--version "1.0.0"
+  "Version of elfeed-web-ng.")
+
+(defvar elfeed-web-ng--feed-done-waiting ()
+  "Clients waiting for feed update completion.")
+
 (defun elfeed-web-ng-make-webid (thing)
   "Compute a unique web ID for THING."
   (let* ((thing-id (prin1-to-string (aref thing 1)))
@@ -139,7 +146,7 @@ re-hashing the database on each request."
         (elfeed-web-ng-make-webid entry))
       (cl-loop for feed hash-values of elfeed-db-feeds
                do (elfeed-web-ng-make-webid feed))
-      (setf elfeed-web-ng--webid-index-stamp stamp))))
+      (setq elfeed-web-ng--webid-index-stamp stamp))))
 
 (defun elfeed-web-ng-lookup (webid)
   "Lookup a thing by its WEBID, or nil when no entry or feed matches."
@@ -222,8 +229,8 @@ that is nil, with `httpd-host' if it names a specific address."
 
 (defun elfeed-web-ng--host-allowed-p (host)
   "Return non-nil if the Host header HOST is permitted."
-  (let ((name (and host (downcase (elfeed-web-ng--strip-port host)))))
-    (and name (member name (elfeed-web-ng--effective-allowed-hosts)) t)))
+  (and-let* ((name (and host (downcase (elfeed-web-ng--strip-port host)))))
+    (and (member name (elfeed-web-ng--effective-allowed-hosts)) t)))
 
 (defun elfeed-web-ng--origin-allowed-p (origin)
   "Return non-nil if ORIGIN is absent or names a permitted host.
@@ -231,11 +238,10 @@ A missing Origin is permitted; the Host check guards those requests.  An
 opaque \"null\" origin, or one naming a host outside the allowlist, is
 rejected so cross-site requests cannot drive state-changing endpoints."
   (or (null origin)
-      (let ((host (and (not (equal origin "null"))
-                       (ignore-errors
-                         (url-host (url-generic-parse-url origin))))))
-        (and host
-             (member (downcase host) (elfeed-web-ng--effective-allowed-hosts))
+      (and-let* ((host (and (not (equal origin "null"))
+                            (ignore-errors
+                              (url-host (url-generic-parse-url origin))))))
+        (and (member (downcase host) (elfeed-web-ng--effective-allowed-hosts))
              t))))
 
 (defun elfeed-web-ng--reject (header value)
@@ -256,6 +262,12 @@ or the cross-site origin -- not the client that sent it."
           "hostname to `elfeed-web-ng-allowed-hosts'.  See the README.\n"))
   (httpd-send-header t "text/plain" 403))
 
+(defun elfeed-web-ng--send-json-error (status &optional message)
+  "Send STATUS as a JSON error response.
+MESSAGE, when non-nil, is the error payload in place of the numeric STATUS."
+  (princ (json-encode (list :error (or message status))))
+  (httpd-send-header t "application/json" status))
+
 (defmacro elfeed-web-ng--with (&rest body)
   "Execute BODY for a permitted, enabled request, else send an error.
 Rejects the request when its Host or Origin header falls outside
@@ -268,19 +280,20 @@ disabled."
     ((not (elfeed-web-ng--origin-allowed-p (elfeed-web-ng--header "Origin")))
      (elfeed-web-ng--reject "Origin" (elfeed-web-ng--header "Origin")))
     ((not elfeed-web-ng-enabled)
-     (princ (json-encode '(:error 403)))
-     (httpd-send-header t "application/json" 403))
+     (elfeed-web-ng--send-json-error 403))
     (t ,@body)))
 
 (defmacro elfeed-web-ng--with-method (method &rest body)
   "Execute BODY when the request method is METHOD, else send a 405.
 Requiring an explicit method keeps a bare GET -- an image tag or a link
-on a malicious page -- from triggering a state change."
+on a malicious page -- from triggering a state change.
+
+Expands into code that reads the free variable `httpd-request', so it
+must be used inside a `defservlet*' body where that binding is in scope."
   (declare (indent 1))
   `(if (equal (caar httpd-request) ,method)
        (progn ,@body)
-     (princ (json-encode '(:error 405)))
-     (httpd-send-header t "application/json" 405)))
+     (elfeed-web-ng--send-json-error 405)))
 
 (defservlet* elfeed/things/:webid application/json ()
   "Return a requested thing (entry or feed)."
@@ -290,32 +303,30 @@ on a malicious page -- from triggering a state change."
 (defservlet* elfeed/content/:ref text/html ()
   "Serve content-addressable content at REF."
   (elfeed-web-ng--with
-    (let ((content (and (elfeed-web-ng--valid-ref-p ref)
-                        (elfeed-deref (elfeed-ref--create :id ref)))))
-      (if content
-          (progn
-            (princ (concat
-                    "<html><head>"
-                    "<meta charset=\"utf-8\">"
-                    "<style>"
-                    "body { background: #fdf6e3; color: #657b83; }"
-                    "a { color: #268bd2; }"
-                    "img { max-width: 100%; height: auto; }"
-                    "@media (prefers-color-scheme: dark) {"
-                    "  body { background: #002b36; color: #839496; }"
-                    "}"
-                    "</style></head><body>"
-                    content
-                    "</body></html>"))
-            ;; The content is arbitrary feed HTML.  Served top-level (not just
-            ;; inside the app's sandboxed iframe) it would otherwise run scripts
-            ;; in this origin; the sandbox directive disables that, and
-            ;; 'unsafe-inline' keeps the inline <style> above working.
-            (httpd-send-header t "text/html" 200
-                               :Content-Security-Policy
-                               "sandbox allow-popups; default-src 'self'; style-src 'unsafe-inline'"))
-        (princ (json-encode '(:error 404)))
-        (httpd-send-header t "application/json" 404)))))
+    (if-let* ((content (and (elfeed-web-ng--valid-ref-p ref)
+                            (elfeed-deref (elfeed-ref--create :id ref)))))
+        (progn
+          (princ (concat
+                  "<html><head>"
+                  "<meta charset=\"utf-8\">"
+                  "<style>"
+                  "body { background: #fdf6e3; color: #657b83; }"
+                  "a { color: #268bd2; }"
+                  "img { max-width: 100%; height: auto; }"
+                  "@media (prefers-color-scheme: dark) {"
+                  "  body { background: #002b36; color: #839496; }"
+                  "}"
+                  "</style></head><body>"
+                  content
+                  "</body></html>"))
+          ;; The content is arbitrary feed HTML.  Served top-level (not just
+          ;; inside the app's sandboxed iframe) it would otherwise run scripts
+          ;; in this origin; the sandbox directive disables that, and
+          ;; 'unsafe-inline' keeps the inline <style> above working.
+          (httpd-send-header t "text/html" 200
+                             :Content-Security-Policy
+                             "sandbox allow-popups; default-src 'self'; style-src 'unsafe-inline'"))
+      (elfeed-web-ng--send-json-error 404))))
 
 (defservlet* elfeed/search application/json (q)
   "Perform a search operation with Q and return the results."
@@ -330,11 +341,8 @@ on a malicious page -- from triggering a state change."
           (cl-incf count)))
       (princ
        (json-encode
-        (cl-coerce
-         (mapcar #'elfeed-web-ng-for-json (nreverse results)) 'vector))))))
-
-(defvar elfeed-web-ng--feed-done-waiting ()
-  "Clients waiting for feed update completion.")
+        (vconcat
+         (mapcar #'elfeed-web-ng-for-json (nreverse results))))))))
 
 (defun elfeed-web-ng--notify-feed-done ()
   "Respond to all clients waiting for feed update completion."
@@ -383,18 +391,13 @@ The current set of tags for each entry will be returned."
              ((cl-some #'null entries) 404)
              (t 200))))
       (if (not (eql status 200))
-          (progn
-            (princ (json-encode `(:error ,status)))
-            (httpd-send-header t "application/json" status))
+          (elfeed-web-ng--send-json-error status)
         (cl-loop for entry in entries
                  for webid = (elfeed-web-ng-make-webid entry)
                  do (apply #'elfeed-tag entry (mapcar #'intern add))
                  do (apply #'elfeed-untag entry (mapcar #'intern remove))
                  collect (cons webid (elfeed-entry-tags entry)) into result
                  finally (princ (if result (json-encode result) "{}")))))))
-
-(defvar elfeed-web-ng--version "1.0.0"
-  "Version of elfeed-web-ng.")
 
 (defservlet* elfeed/api application/json ()
   "Return server capabilities for feature negotiation."
@@ -429,8 +432,7 @@ and empty string for GET."
            (entry (elfeed-web-ng-lookup webid)))
       (cond
        ((null entry)
-        (princ (json-encode '(:error "not found")))
-        (httpd-send-header t "application/json" 404))
+        (elfeed-web-ng--send-json-error 404 "not found"))
        ((equal method "GET")
         (let ((annotation (if (featurep 'elfeed-curate)
                               (elfeed-curate-get-entry-annotation entry)
@@ -438,23 +440,18 @@ and empty string for GET."
           (princ (json-encode (list :webid webid :annotation annotation)))))
        ((equal method "PUT")
         (if (not (featurep 'elfeed-curate))
-            (progn
-              (princ (json-encode '(:error "elfeed-curate not available")))
-              (httpd-send-header t "application/json" 501))
+            (elfeed-web-ng--send-json-error 501 "elfeed-curate not available")
           (let* ((content (decode-coding-string
                            (cadr (assoc "Content" httpd-request)) 'utf-8))
                  (json-data (ignore-errors (json-read-from-string content)))
                  (annotation (cdr (assoc 'annotation json-data))))
             (if (null json-data)
-                (progn
-                  (princ (json-encode '(:error "invalid JSON")))
-                  (httpd-send-header t "application/json" 400))
+                (elfeed-web-ng--send-json-error 400 "invalid JSON")
               (elfeed-curate-set-entry-annotation entry (or annotation ""))
               (princ (json-encode (list :webid webid
                                         :annotation (elfeed-curate-get-entry-annotation entry))))))))
        (t
-        (princ (json-encode '(:error "method not allowed")))
-        (httpd-send-header t "application/json" 405))))))
+        (elfeed-web-ng--send-json-error 405 "method not allowed"))))))
 
 (defvar elfeed-web-ng--feed-done-timer nil
   "Active completion-poll timer, or nil when no poll chain is running.
@@ -465,9 +462,9 @@ Guards against stacking one polling chain per `feed-update' request.")
 then notify waiting clients."
   (if (zerop (elfeed-queue-count-total))
       (progn
-        (setf elfeed-web-ng--feed-done-timer nil)
+        (setq elfeed-web-ng--feed-done-timer nil)
         (elfeed-web-ng--notify-feed-done))
-    (setf elfeed-web-ng--feed-done-timer
+    (setq elfeed-web-ng--feed-done-timer
           (run-at-time 1 nil #'elfeed-web-ng--check-queue-done))))
 
 (defun elfeed-web-ng--monitor-feed-update ()
@@ -549,14 +546,14 @@ Suppressed by `elfeed-web-ng-allow-public-bind'."
   (interactive)
   (elfeed-web-ng--warn-public-bind)
   (httpd-start)
-  (setf elfeed-web-ng-enabled t))
+  (setq elfeed-web-ng-enabled t))
 
 (defun elfeed-web-ng-stop ()
   "Stop the Elfeed web interface server.
 This stops the underlying simple-httpd server, which is shared across
 all packages that use it (e.g., impatient-mode, skewer-mode)."
   (interactive)
-  (setf elfeed-web-ng-enabled nil)
+  (setq elfeed-web-ng-enabled nil)
   (httpd-stop))
 
 (provide 'elfeed-web-ng)
