@@ -3,7 +3,7 @@
 // The build id below is stamped at build time (see vite.config.js) so
 // CACHE_NAME changes on every build, letting the activate handler evict
 // stale shells.
-const CACHE_NAME = 'elfeed-web-mq7xgmb1';
+const CACHE_NAME = 'elfeed-web-mq9ckx4x';
 
 const STATIC_ASSETS = [
   '/elfeed/',

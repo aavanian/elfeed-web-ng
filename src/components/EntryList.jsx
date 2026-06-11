@@ -70,10 +70,7 @@ function SwipeableEntryItem({ entry, isSelected, onSelect }) {
         const newTags = isUnread
           ? tags.filter(t => t !== 'unread')
           : [...tags, 'unread'];
-        const updatedEntry = { ...entry, tags: newTags };
-        store.entries.value = store.entries.value.map(e =>
-          e.webid === updatedEntry.webid ? updatedEntry : e
-        );
+        store.replaceEntry({ ...entry, tags: newTags });
       } catch (_) {
         // Flash the tray red briefly so the user sees the action failed.
         setSnapping(false);

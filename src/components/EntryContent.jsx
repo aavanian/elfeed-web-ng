@@ -79,17 +79,8 @@ export function EntryContent({ entry, onBack }) {
     };
   }, [contentUrl]);
 
-  const handleTagsChanged = useCallback((updatedEntry) => {
-    store.entries.value = store.entries.value.map(e =>
-      e.webid === updatedEntry.webid ? updatedEntry : e
-    );
-    store.selectedEntry.value = updatedEntry;
-  }, []);
-
-  const handleAnnotationChanged = useCallback((updatedEntry) => {
-    store.entries.value = store.entries.value.map(e =>
-      e.webid === updatedEntry.webid ? updatedEntry : e
-    );
+  const handleEntryUpdated = useCallback((updatedEntry) => {
+    store.replaceEntry(updatedEntry);
     store.selectedEntry.value = updatedEntry;
   }, []);
 
@@ -113,8 +104,8 @@ export function EntryContent({ entry, onBack }) {
       </div>
 
       <div class="entry-actions">
-        <TagActions entry={entry} onTagsChanged={handleTagsChanged} />
-        <AnnotationEditor entry={entry} onAnnotationChanged={handleAnnotationChanged} />
+        <TagActions entry={entry} onTagsChanged={handleEntryUpdated} />
+        <AnnotationEditor entry={entry} onAnnotationChanged={handleEntryUpdated} />
       </div>
 
       {!contentUrl ? (
