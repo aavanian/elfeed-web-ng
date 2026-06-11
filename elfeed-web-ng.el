@@ -247,22 +247,27 @@ disabled."
   (with-elfeed-web-ng
     (let ((content (elfeed-deref (elfeed-ref--create :id ref))))
       (if content
-          (princ (concat
-                  "<html><head>"
-                  "<meta charset=\"utf-8\">"
-                  "<style>"
-                  "body { background: #fdf6e3; color: #657b83; }"
-                  "a { color: #268bd2; }"
-                  "img { max-width: 100%; height: auto; }"
-                  "@media (prefers-color-scheme: dark) {"
-                  "  body { background: #002b36; color: #839496; }"
-                  "}"
-                  "</style></head><body>"
-                  content
-                  "</body></html>"))
-          (httpd-send-header t "text/html" 200
-                             :Content-Security-Policy
-                             "sandbox allow-popups; default-src 'self'")
+          (progn
+            (princ (concat
+                    "<html><head>"
+                    "<meta charset=\"utf-8\">"
+                    "<style>"
+                    "body { background: #fdf6e3; color: #657b83; }"
+                    "a { color: #268bd2; }"
+                    "img { max-width: 100%; height: auto; }"
+                    "@media (prefers-color-scheme: dark) {"
+                    "  body { background: #002b36; color: #839496; }"
+                    "}"
+                    "</style></head><body>"
+                    content
+                    "</body></html>"))
+            ;; The content is arbitrary feed HTML.  Served top-level (not just
+            ;; inside the app's sandboxed iframe) it would otherwise run scripts
+            ;; in this origin; the sandbox directive disables that, and
+            ;; 'unsafe-inline' keeps the inline <style> above working.
+            (httpd-send-header t "text/html" 200
+                               :Content-Security-Policy
+                               "sandbox allow-popups; default-src 'self'; style-src 'unsafe-inline'"))
         (princ (json-encode '(:error 404)))
         (httpd-send-header t "application/json" 404)))))
 
