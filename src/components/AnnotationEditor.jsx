@@ -7,19 +7,24 @@ export function AnnotationEditor({ entry, onAnnotationChanged }) {
   const [text, setText] = useState(entry.annotation || '');
   const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     setText(entry.annotation || '');
     setOpen(!!entry.annotation);
+    setError(null);
   }, [entry.webid]);
 
   if (!api.hasFeature('annotations')) return null;
 
   const save = async () => {
     setSaving(true);
+    setError(null);
     try {
       await api.setAnnotation(entry.webid, text);
       onAnnotationChanged({ ...entry, annotation: text });
+    } catch {
+      setError('Could not save annotation.');
     } finally {
       setSaving(false);
     }
@@ -49,6 +54,7 @@ export function AnnotationEditor({ entry, onAnnotationChanged }) {
           Cancel
         </button>
       </div>
+      {error && <small class="error-inline">{error}</small>}
     </div>
   );
 }

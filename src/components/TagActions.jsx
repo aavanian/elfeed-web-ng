@@ -6,10 +6,12 @@ import * as api from '../lib/api';
 export function TagActions({ entry, onTagsChanged }) {
   const tags = entry.tags || [];
   const [pending, setPending] = useState(null);
+  const [error, setError] = useState(null);
 
   const toggleTag = useCallback(async (tag) => {
     if (pending !== null) return;
     setPending(tag);
+    setError(null);
     try {
       const has = tags.includes(tag);
       const add = has ? [] : [tag];
@@ -17,6 +19,8 @@ export function TagActions({ entry, onTagsChanged }) {
       await api.updateTags(add, remove, [entry.webid]);
       const newTags = has ? tags.filter(t => t !== tag) : [...tags, tag];
       onTagsChanged({ ...entry, tags: newTags });
+    } catch {
+      setError(`Could not update ${tag}.`);
     } finally {
       setPending(null);
     }
@@ -55,6 +59,7 @@ export function TagActions({ entry, onTagsChanged }) {
       >
         Later
       </button>
+      {error && <small class="error-inline">{error}</small>}
     </div>
   );
 }
