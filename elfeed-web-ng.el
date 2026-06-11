@@ -48,8 +48,10 @@
   :group 'elfeed
   :type 'boolean)
 
-(defvar elfeed-web-ng-limit 512
-  "Maximum number of entries to serve at once.")
+(defcustom elfeed-web-ng-limit 512
+  "Maximum number of entries to serve at once."
+  :group 'elfeed
+  :type 'integer)
 
 (defcustom elfeed-web-ng-saved-searches nil
   "List of saved searches for the web interface.
@@ -270,6 +272,16 @@ disabled."
      (httpd-send-header t "application/json" 403))
     (t ,@body)))
 
+(defmacro with-elfeed-web-ng-method (method &rest body)
+  "Execute BODY when the request method is METHOD, else send a 405.
+Requiring an explicit method keeps a bare GET -- an image tag or a link
+on a malicious page -- from triggering a state change."
+  (declare (indent 1))
+  `(if (equal (caar httpd-request) ,method)
+       (progn ,@body)
+     (princ (json-encode '(:error 405)))
+     (httpd-send-header t "application/json" 405)))
+
 (defservlet* elfeed/things/:webid application/json ()
   "Return a requested thing (entry or feed)."
   (with-elfeed-web-ng
@@ -337,10 +349,7 @@ disabled."
 Only POST requests are accepted; this keeps a bare GET (an image tag or
 a link on a malicious page) from clearing unread state."
   (with-elfeed-web-ng
-    (if (not (equal (caar httpd-request) "POST"))
-        (progn
-          (princ (json-encode '(:error 405)))
-          (httpd-send-header t "application/json" 405))
+    (with-elfeed-web-ng-method "POST"
       (with-elfeed-db-visit (e _)
         (elfeed-untag e 'unread))
       (princ (json-encode t)))))
@@ -476,10 +485,7 @@ button again while feeds are still arriving would add load without
 yielding new data.  Either way a single completion-poll chain is kept
 running so `feed-update-done' clients are notified."
   (with-elfeed-web-ng
-    (if (not (equal (caar httpd-request) "POST"))
-        (progn
-          (princ (json-encode '(:error 405)))
-          (httpd-send-header t "application/json" 405))
+    (with-elfeed-web-ng-method "POST"
       (when (zerop (elfeed-queue-count-total))
         (elfeed-update))
       (elfeed-web-ng--monitor-feed-update)
