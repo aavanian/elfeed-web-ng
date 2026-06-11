@@ -3,12 +3,27 @@
 // The build id below is stamped at build time (see vite.config.js) so
 // CACHE_NAME changes on every build, letting the activate handler evict
 // stale shells.
-const CACHE_NAME = 'elfeed-web-mq9e1pfr';
+const CACHE_NAME = 'elfeed-web-mq9e3t6j';
 
 const STATIC_ASSETS = [
   '/elfeed/',
   '/elfeed/manifest.json',
 ];
+
+// The cacheable surface is the build output, which lives at a few fixed
+// paths. Anything else under /elfeed/ is an API endpoint, served
+// network-first and never cached. Allowlisting the static paths (rather than
+// enumerating the API ones) keeps this from drifting as endpoints are added.
+function isStaticAsset(p) {
+  return (
+    p === '/elfeed/' ||
+    p === '/elfeed/index.html' ||
+    p === '/elfeed/manifest.json' ||
+    p === '/elfeed/sw.js' ||
+    p.startsWith('/elfeed/assets/') ||
+    p.startsWith('/elfeed/icons/')
+  );
+}
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -30,19 +45,9 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // API calls: network-first
+  // API calls: network-first, never cached.
   const p = url.pathname;
-  if (url.pathname.startsWith('/elfeed/') &&
-      (p.includes('/search') ||
-       p.includes('/tags') ||
-       p === '/elfeed/feed-update' ||
-       p === '/elfeed/feed-update-done' ||
-       p.includes('/api') ||
-       p.includes('/annotation') ||
-       p.includes('/saved-searches') ||
-       p.includes('/things') ||
-       p.includes('/content') ||
-       p.includes('/mark-all-read'))) {
+  if (p.startsWith('/elfeed/') && !isStaticAsset(p)) {
     event.respondWith(
       fetch(request).catch(() => caches.match(request))
     );
