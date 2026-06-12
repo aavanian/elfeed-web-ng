@@ -13,7 +13,8 @@ const CONTENT_STYLE = `
     body { background: #fdf6e3; color: #657b83; overflow-x: hidden; word-break: break-word; }
     a { color: #268bd2; }
     ul, ol { padding-left: 1em; }
-    img, video, table { max-width: 100%; height: auto; }
+    figure { margin-inline: 0; }
+    img, video, iframe, table { max-width: 100%; height: auto; }
     pre, code { overflow-x: auto; max-width: 100%; }
     @media (prefers-color-scheme: dark) {
       body { background: #002b36; color: #839496; }
@@ -35,6 +36,19 @@ function rewriteLinks(html) {
   doc.querySelectorAll('a[href]').forEach(a => {
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
+  });
+  doc.querySelectorAll('iframe[width][height]').forEach(frame => {
+    const width = parseFloat(frame.getAttribute('width'));
+    const height = parseFloat(frame.getAttribute('height'));
+    if (width > 0 && height > 0) {
+      // Keep the embed's natural width as the preferred size (capped to the
+      // viewport by max-width:100%) and let aspect-ratio drive the height, so a
+      // wide video embed scales down instead of forcing horizontal scroll.
+      frame.style.aspectRatio = `${width} / ${height}`;
+      frame.style.width = `${width}px`;
+      frame.removeAttribute('width');
+      frame.removeAttribute('height');
+    }
   });
   doc.querySelectorAll('img[src]').forEach(img => {
     if (!img.closest('a')) {
