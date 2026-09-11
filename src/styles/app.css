@@ -232,6 +232,9 @@ header h1 {
 .entry-list {
   padding: 0;
   margin: 0;
+  /* Same horizontal-gesture claim as the rows below, so a touch landing on a
+     row boundary rather than on a row is covered too. */
+  touch-action: pan-y;
 }
 
 .entry-list li {
@@ -247,6 +250,10 @@ header h1 {
   cursor: pointer;
   position: relative;
   overflow: hidden;
+  /* A horizontal drag on a row is ours (swipe to toggle read); only vertical
+     panning may reach the browser, which keeps WebKit's swipe-to-navigate
+     gesture out of the row. */
+  touch-action: pan-y;
 }
 
 .entry-item-inner {
