@@ -157,6 +157,15 @@ header h1 {
   min-height: calc(100dvh - 5rem);
 }
 
+/* A grid item refuses by default to shrink below the min-content width of what
+   it holds, so the saved-search strip -- a row of nowrap buttons that scrolls
+   horizontally -- pushed the pane wider than the grid and took the whole page
+   off-screen with it. The panes size to the grid; the strip scrolls. */
+.list-pane,
+.content-pane {
+  min-width: 0;
+}
+
 @media (min-width: 768px) {
   .app-layout {
     grid-template-columns: 2fr 3fr;
