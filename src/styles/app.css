@@ -3,6 +3,9 @@
 :root {
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  /* Stamped at build time (see vite.config.js); reported by the build panel so
+     a stylesheet served from a stale cache is visible rather than silent. */
+  --build-id: "__BUILD_ID__";
 }
 
 /* Solarized Light */
@@ -131,6 +134,12 @@ header {
 header h1 {
   margin: 0;
   font-size: 1.25rem;
+  /* The title is a press target for the build panel; keep iOS from hijacking
+     the press with a selection callout. Also set inline in app.jsx, so the
+     behaviour survives a stale stylesheet. */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 .update-feeds {
@@ -252,8 +261,10 @@ header h1 {
   overflow: hidden;
   /* A horizontal drag on a row is ours (swipe to toggle read); only vertical
      panning may reach the browser, which keeps WebKit's swipe-to-navigate
-     gesture out of the row. */
+     gesture out of the row. Scoped to the row so the document scroller keeps
+     its default behaviour. */
   touch-action: pan-y;
+  overscroll-behavior-x: none;
 }
 
 .entry-item-inner {
@@ -501,4 +512,42 @@ header h1 {
   color: var(--pico-del-color, #dc3545);
   display: block;
   padding: 0.25rem 0;
+}
+
+/* Build panel (long-press the title) */
+.build-info {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  top: calc(var(--safe-top) + 1rem);
+  z-index: 100;
+  max-width: min(90vw, 28rem);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: 0.25rem;
+  background: var(--pico-card-background-color);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+  font-size: 0.75rem;
+  font-family: var(--pico-font-family-monospace, monospace);
+  line-height: 1.5;
+}
+
+.build-info dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 0.75rem;
+  margin: 0;
+}
+
+.build-info dt {
+  color: var(--pico-muted-color);
+}
+
+.build-info dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.build-info .stale {
+  color: var(--pico-del-color);
 }

@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useEffect, useLayoutEffect, useCallback, useRef } from 'preact/hooks';
+import { useEffect, useLayoutEffect, useCallback, useRef, useState } from 'preact/hooks';
 import * as api from './lib/api';
 import * as store from './lib/store';
 import { SavedSearches } from './components/SavedSearches';
 import { SearchBar } from './components/SearchBar';
 import { EntryList } from './components/EntryList';
 import { EntryContent } from './components/EntryContent';
+import { BuildInfo } from './components/BuildInfo';
 
 // Window scroll offset of the list at the moment an entry was opened, so we can
 // return the reader to where they were when they go back.
@@ -17,6 +18,7 @@ export function App() {
   // actual scroll happens in a layout effect, once the list-pane is back in the
   // layout (on mobile it was display:none while the entry was open).
   const pendingRestore = useRef(false);
+  const [showBuild, setShowBuild] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -139,11 +141,66 @@ export function App() {
   const updating = store.updating.value;
   const error = store.error.value;
 
+  // The title opens the build readout: long-press, or three quick taps. No room
+  // in the header for a control, and it is only ever wanted when something
+  // looks wrong. The tap count is there because iOS claims long presses on text
+  // for its own selection UI, and a device running a stale stylesheet has no
+  // `-webkit-touch-callout: none` to stop it — the exact situation the readout
+  // exists to diagnose.
+  const titleRef = useRef(null);
+  useEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+
+    let timer = null;
+    let taps = 0;
+    let tapReset = null;
+    const cancel = () => { clearTimeout(timer); timer = null; };
+
+    const onStart = (e) => {
+      // Suppress the selection callout at the source; the title has no other
+      // touch behaviour to preserve.
+      e.preventDefault();
+      cancel();
+      timer = setTimeout(() => setShowBuild(true), 600);
+      taps += 1;
+      clearTimeout(tapReset);
+      tapReset = setTimeout(() => { taps = 0; }, 600);
+      if (taps >= 3) {
+        taps = 0;
+        cancel();
+        setShowBuild(true);
+      }
+    };
+    const onContext = (e) => { e.preventDefault(); setShowBuild(true); };
+
+    el.addEventListener('touchstart', onStart, { passive: false });
+    el.addEventListener('touchend', cancel);
+    el.addEventListener('touchmove', cancel);
+    el.addEventListener('touchcancel', cancel);
+    el.addEventListener('contextmenu', onContext);
+    return () => {
+      cancel();
+      clearTimeout(tapReset);
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchend', cancel);
+      el.removeEventListener('touchmove', cancel);
+      el.removeEventListener('touchcancel', cancel);
+      el.removeEventListener('contextmenu', onContext);
+    };
+  }, []);
+
   return (
     <main class={`container-fluid ${selected ? 'reading' : ''}`}>
       {error && <div class="error-banner" role="alert">{error}</div>}
+      {showBuild && <BuildInfo onClose={() => setShowBuild(false)} />}
       <header>
-        <h1>Elfeed</h1>
+        <h1
+          ref={titleRef}
+          style="-webkit-user-select: none; user-select: none; -webkit-touch-callout: none;"
+        >
+          Elfeed
+        </h1>
         <button
           class="outline secondary update-feeds"
           onClick={onFeedUpdate}
