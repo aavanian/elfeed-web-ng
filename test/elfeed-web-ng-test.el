@@ -121,5 +121,28 @@
   (should-not (elfeed-web-ng--valid-webid-p "aaaaaa+aaaaa"))
   (should-not (elfeed-web-ng--valid-webid-p nil)))
 
+;;; Static file serving.
+
+(ert-deftest elfeed-web-ng-test-serve-static-resolves-symlinks ()
+  "A symlinked asset is served by its target, not by the link.
+`simple-httpd' builds the ETag and Last-Modified from `file-attributes',
+which describes the link itself, so serving the link would pin a
+validator to the link's own mtime and never invalidate a client cache."
+  (let* ((dir (make-temp-file "elfeed-web-ng-test" t))
+         (target (expand-file-name "real.css" dir))
+         (link (expand-file-name "link.css" dir))
+         (elfeed-web-ng--data-root dir)
+         (served nil))
+    (unwind-protect
+        (progn
+          (with-temp-file target (insert "body{}"))
+          (make-symbolic-link target link)
+          (cl-letf (((symbol-function 'httpd-send-file)
+                     (lambda (_proc path &optional _req) (setq served path))))
+            (elfeed-web-ng--serve-static "/link.css" nil))
+          (should (equal (file-truename target) served))
+          (should-not (equal link served)))
+      (delete-directory dir t))))
+
 (provide 'elfeed-web-ng-test)
 ;;; elfeed-web-ng-test.el ends here

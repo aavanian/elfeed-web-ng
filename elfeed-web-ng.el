@@ -497,6 +497,25 @@ immediately rather than parking the process with nothing to drain it."
         (princ (json-encode '(:status "done")))
       (push (httpd-discard-buffer) elfeed-web-ng--feed-done-waiting))))
 
+(defun elfeed-web-ng--serve-static (path request)
+  "Serve PATH under `elfeed-web-ng--data-root' for REQUEST.
+Like `httpd-serve-root', but hands `httpd-send-file' the target of a
+symbolic link rather than the link.  `simple-httpd' derives both ETag and
+Last-Modified from `file-attributes', which describes a link itself, so a
+package whose static files are symlinks into a checkout -- what
+`straight.el' and friends build -- would serve a validator frozen at link
+creation and clients would revalidate their way into a stale build
+forever."
+  (let* ((file (httpd-gen-path path elfeed-web-ng--data-root))
+         (status (httpd-status file)))
+    (cond
+     ((/= status 200)
+      (httpd-error t status))
+     ((file-directory-p file)
+      (httpd-send-directory t file path))
+     (t
+      (httpd-send-file t (file-truename file) request)))))
+
 (defservlet elfeed text/plain (uri-path _ request)
   "Serve static files from `elfeed-web-ng--data-root'."
   (cond
@@ -516,7 +535,7 @@ immediately rather than parking the process with nothing to drain it."
                  (expand-file-name "index.html" elfeed-web-ng--data-root))
                 (httpd-send-header t "text/html" 200
                                    :Cache-Control "no-cache, no-store, must-revalidate"))
-            (httpd-serve-root t elfeed-web-ng--data-root path request))))))))
+            (elfeed-web-ng--serve-static path request))))))))
 
 (defun httpd/favicon.ico (proc &rest _)
   "Redirect /favicon.ico to /elfeed/favicon.ico."
