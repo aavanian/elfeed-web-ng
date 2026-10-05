@@ -371,23 +371,13 @@ must be called inside a `defservlet*' body."
     (if-let* ((content (and (elfeed-web-ng--valid-ref-p ref)
                             (elfeed-deref (elfeed-ref--create :id ref)))))
         (progn
-          (princ (concat
-                  "<html><head>"
-                  "<meta charset=\"utf-8\">"
-                  "<style>"
-                  "body { background: #fdf6e3; color: #657b83; }"
-                  "a { color: #268bd2; }"
-                  "img { max-width: 100%; height: auto; }"
-                  "@media (prefers-color-scheme: dark) {"
-                  "  body { background: #002b36; color: #839496; }"
-                  "}"
-                  "</style></head><body>"
-                  content
-                  "</body></html>"))
+          ;; The reader parses this and applies its own styling, so only
+          ;; the encoding is declared here.
+          (princ (concat "<meta charset=\"utf-8\">" content))
           ;; The content is arbitrary feed HTML.  Served top-level (not just
           ;; inside the app's sandboxed iframe) it would otherwise run scripts
           ;; in this origin; the sandbox directive disables that, and
-          ;; 'unsafe-inline' keeps the inline <style> above working.  No
+          ;; 'unsafe-inline' keeps the feed's own inline styles working.  No
           ;; Referer tells the hosts of its images where the reader lives.
           (httpd-send-header t "text/html" 200
                              :Content-Security-Policy

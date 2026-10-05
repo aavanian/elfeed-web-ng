@@ -413,6 +413,17 @@ names stay in the Host allowlist."
         (should (string-match-p "<p>hello</p>" (plist-get response :body)))
         (should (string-match-p "\\`sandbox allow-popups;" csp))))))
 
+(ert-deftest elfeed-web-ng-test-content-unstyled ()
+  "Entry content is served as-is, declared UTF-8; the reader styles it."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let* ((entry (elfeed-web-ng-test--add-entry :content "<p>hé</p>"))
+             (ref (elfeed-ref-id (elfeed-entry-content entry))))
+        (should (equal "<meta charset=\"utf-8\"><p>hé</p>"
+                       (plist-get (elfeed-web-ng-test--request
+                                   "GET" (concat "/elfeed/content/" ref))
+                                  :body)))))))
+
 (ert-deftest elfeed-web-ng-test-no-referrer ()
   "Pages that can load feed content forbid sending a Referer.
 The reader shows feed HTML in an about:srcdoc frame, which inherits the
