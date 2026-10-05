@@ -97,6 +97,17 @@ A rejected request returns a generic `403`; the host it was addressed to is
 recorded in the `*httpd*` log, next to the request entry that shows the client
 address, so you can see exactly what to add.
 
+**What the safeguards cover.** They apply to the `/elfeed/` paths only. The
+simple-httpd server is shared, so everything else it serves on the same address
+lacks them: other packages' servlets (such as impatient-mode or skewer), and,
+because simple-httpd defaults to `httpd-serve-files` `t`, the files and
+directory listings under `httpd-root` (`~/public_html` by default). Unless you
+use simple-httpd to serve files, turn that off:
+
+```elisp
+(setq httpd-serve-files nil)
+```
+
 **All-interfaces bind warning.** If `httpd-host` is unset or a wildcard
 (`0.0.0.0` / `::`) when you start the server, a warning fires, since the
 unauthenticated interface is then exposed on every network the machine joins.
