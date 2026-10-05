@@ -62,7 +62,9 @@ byte_compile() {
 
 run_ert() {
 	echo "== ERT"
-	run_emacs -l test/elfeed-web-ng-test.el -f ert-run-tests-batch-and-exit
+	# ert-quiet lists only the tests that fail.
+	run_emacs -l test/elfeed-web-ng-test.el --eval "(setq ert-quiet t)" \
+		-f ert-run-tests-batch-and-exit
 }
 
 # Print the build stamps baked into the committed bundle, as JSON.
