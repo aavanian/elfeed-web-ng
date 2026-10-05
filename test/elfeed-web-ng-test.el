@@ -710,6 +710,52 @@ No /feed-update request ever starts the poll chain in this case."
         (should (= 1 (length (elfeed-web-ng-test--search
                               "/elfeed/search?q=%231"))))))))
 
+;;; Emacs search buffer.
+
+(defmacro elfeed-web-ng-test--recording-redraws (redraws &rest body)
+  "Run BODY, recording search buffer redraws in REDRAWS.
+A whole-listing redraw is recorded as :force, a redraw of some entries
+as the list of those entries."
+  (declare (indent 1))
+  `(cl-letf (((symbol-function 'elfeed-search-update)
+              (lambda (&optional method) (push method ,redraws)))
+             ((symbol-function 'elfeed-search-update-entry)
+              (lambda (&rest entries) (push entries ,redraws))))
+     ,@body))
+
+(ert-deftest elfeed-web-ng-test-search-buffer-redrawn ()
+  "Web tag changes show up in an open *elfeed-search* buffer."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let* ((entry (elfeed-web-ng-test--add-entry))
+             (webid (elfeed-web-ng-make-webid entry))
+             (redraws nil)
+             (buffer (get-buffer-create "*elfeed-search*")))
+        (unwind-protect
+            (elfeed-web-ng-test--recording-redraws redraws
+              (elfeed-web-ng-test--put-tags
+               (format "{\"add\": [\"later\"], \"entries\": [%S]}" webid))
+              (should (equal (list (list entry)) redraws))
+              (setq redraws nil)
+              (elfeed-web-ng-test--request "POST" "/elfeed/mark-all-read")
+              (should (equal '(:force) redraws)))
+          (kill-buffer buffer))))))
+
+(ert-deftest elfeed-web-ng-test-search-buffer-absent ()
+  "Without an *elfeed-search* buffer, web tag changes redraw nothing."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let ((webid (elfeed-web-ng-make-webid (elfeed-web-ng-test--add-entry)))
+            (redraws nil))
+        (when-let* ((buffer (get-buffer "*elfeed-search*")))
+          (kill-buffer buffer))
+        (elfeed-web-ng-test--recording-redraws redraws
+          (elfeed-web-ng-test--put-tags
+           (format "{\"add\": [\"later\"], \"entries\": [%S]}" webid))
+          (elfeed-web-ng-test--request "POST" "/elfeed/mark-all-read")
+          (should-not redraws)
+          (should-not (get-buffer "*elfeed-search*")))))))
+
 ;;; Request bodies.
 
 (ert-deftest elfeed-web-ng-test-body-keys-not-interned ()

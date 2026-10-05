@@ -411,6 +411,18 @@ limit to the query would let the client override it."
         (vconcat
          (mapcar #'elfeed-web-ng-for-json (nreverse results))))))))
 
+(defun elfeed-web-ng--redraw-search-buffer (entries)
+  "Show tag changes in the `*elfeed-search*' buffer, when one is open.
+ENTRIES are the entries whose tags changed, or t when the change may
+affect any entry and the whole listing is redrawn.  Elfeed redraws only
+for its own commands, so without this the Emacs view would keep showing
+the state from before a change made in the web interface."
+  (when-let* ((buffer (get-buffer "*elfeed-search*")))
+    (with-current-buffer buffer
+      (if (eq entries t)
+          (elfeed-search-update :force)
+        (apply #'elfeed-search-update-entry entries)))))
+
 (defun elfeed-web-ng--notify-feed-done ()
   "Respond to all clients waiting for feed update completion."
   (while elfeed-web-ng--feed-done-waiting
@@ -427,6 +439,7 @@ a link on a malicious page) from clearing unread state."
     (elfeed-web-ng--with-method "POST"
       (with-elfeed-db-visit (e _)
         (elfeed-untag e 'unread))
+      (elfeed-web-ng--redraw-search-buffer t)
       (princ (json-encode t)))))
 
 (defservlet* elfeed/tags application/json ()
@@ -459,7 +472,9 @@ The current set of tags for each entry will be returned."
                        do (apply #'elfeed-tag entry (mapcar #'intern add))
                        do (apply #'elfeed-untag entry (mapcar #'intern remove))
                        collect (cons webid (elfeed-entry-tags entry)) into result
-                       finally (princ (if result (json-encode result) "{}"))))))))))
+                       finally (progn
+                                 (elfeed-web-ng--redraw-search-buffer entries)
+                                 (princ (if result (json-encode result) "{}")))))))))))
 
 (defservlet* elfeed/api application/json ()
   "Return the server version and its optional features.
