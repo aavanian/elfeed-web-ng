@@ -3,7 +3,7 @@
 // The build id below is stamped at build time (see vite.config.js) so
 // CACHE_NAME changes on every build, letting the activate handler evict
 // stale shells.
-const CACHE_NAME = 'elfeed-web-muvwkpnu';
+const CACHE_NAME = 'elfeed-web-muvwpy0i';
 
 const STATIC_ASSETS = [
   '/elfeed/',
@@ -45,14 +45,10 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // API calls: network-first, never cached.
+  // API calls are never cached, so leave them to the browser: returning
+  // without respondWith sends them to the network as if no worker existed.
   const p = url.pathname;
-  if (p.startsWith('/elfeed/') && !isStaticAsset(p)) {
-    event.respondWith(
-      fetch(request).catch(() => caches.match(request))
-    );
-    return;
-  }
+  if (p.startsWith('/elfeed/') && !isStaticAsset(p)) return;
 
   // App shell (navigations + static assets): network-first so online devices
   // always pull the fresh build; fall back to cache when offline.
