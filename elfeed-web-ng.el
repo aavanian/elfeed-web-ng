@@ -186,6 +186,14 @@ allowed set, preventing unbounded obarray growth via `intern'."
        (<= (length tag) 64)
        (string-match-p "\\`[-a-zA-Z0-9_★]+\\'" tag)))
 
+(defun elfeed-web-ng--valid-tags-p (tags)
+  "Return non-nil if TAGS, a decoded JSON value, is absent or valid.
+A valid value is an array whose every element satisfies
+`elfeed-web-ng--valid-tag-p'."
+  (or (null tags)
+      (and (vectorp tags)
+           (cl-every #'elfeed-web-ng--valid-tag-p tags))))
+
 (defun elfeed-web-ng--valid-ref-p (ref)
   "Return non-nil if REF is a well-formed content reference.
 Elfeed content refs are SHA-1 hex digests.  Rejecting anything else
@@ -295,6 +303,17 @@ must be used inside a `defservlet*' body where that binding is in scope."
        (progn ,@body)
      (elfeed-web-ng--send-json-error 405)))
 
+(defun elfeed-web-ng--request-json ()
+  "Return the request body parsed as a JSON object, or nil.
+Nil stands for a missing body, invalid JSON, or a JSON value that is
+not a non-empty object.  Reads the free variable `httpd-request', so it
+must be called inside a `defservlet*' body."
+  (when-let* ((content (cadr (assoc "Content" httpd-request)))
+              (json (ignore-errors
+                      (json-read-from-string
+                       (decode-coding-string content 'utf-8)))))
+    (and (consp json) json)))
+
 (defservlet* elfeed/things/:webid application/json ()
   "Return a requested thing (entry or feed)."
   (elfeed-web-ng--with
@@ -373,31 +392,26 @@ object with any of these properties:
 
 The current set of tags for each entry will be returned."
   (elfeed-web-ng--with
-    (let* ((request (caar httpd-request))
-           (content (decode-coding-string
-                     (cadr (assoc "Content" httpd-request)) 'utf-8))
-           (json (ignore-errors (json-read-from-string content)))
-           (add (append (cdr (assoc 'add json)) nil))
-           (remove (append (cdr (assoc 'remove json)) nil))
-           (webids (cdr (assoc 'entries json)))
-           (entries (cl-map 'list #'elfeed-web-ng-lookup webids))
-           (tags-valid (and (cl-every #'elfeed-web-ng--valid-tag-p add)
-                            (cl-every #'elfeed-web-ng--valid-tag-p remove)))
-           (status
-            (cond
-             ((not (equal request "PUT")) 405)
-             ((null json) 400)
-             ((not tags-valid) 400)
-             ((cl-some #'null entries) 404)
-             (t 200))))
-      (if (not (eql status 200))
-          (elfeed-web-ng--send-json-error status)
-        (cl-loop for entry in entries
-                 for webid = (elfeed-web-ng-make-webid entry)
-                 do (apply #'elfeed-tag entry (mapcar #'intern add))
-                 do (apply #'elfeed-untag entry (mapcar #'intern remove))
-                 collect (cons webid (elfeed-entry-tags entry)) into result
-                 finally (princ (if result (json-encode result) "{}")))))))
+    (elfeed-web-ng--with-method "PUT"
+      (let* ((json (elfeed-web-ng--request-json))
+             (add (alist-get 'add json))
+             (remove (alist-get 'remove json))
+             (webids (alist-get 'entries json)))
+        (if (not (and json
+                      (elfeed-web-ng--valid-tags-p add)
+                      (elfeed-web-ng--valid-tags-p remove)
+                      (or (null webids) (vectorp webids))))
+            (elfeed-web-ng--send-json-error 400)
+          (let* ((webids (append webids nil))
+                 (entries (mapcar #'elfeed-web-ng-lookup webids)))
+            (if (memq nil entries)
+                (elfeed-web-ng--send-json-error 404)
+              (cl-loop for webid in webids
+                       for entry in entries
+                       do (apply #'elfeed-tag entry (mapcar #'intern add))
+                       do (apply #'elfeed-untag entry (mapcar #'intern remove))
+                       collect (cons webid (elfeed-entry-tags entry)) into result
+                       finally (princ (if result (json-encode result) "{}"))))))))))
 
 (defservlet* elfeed/api application/json ()
   "Return server capabilities for feature negotiation."
@@ -441,10 +455,8 @@ and empty string for GET."
        ((equal method "PUT")
         (if (not (featurep 'elfeed-curate))
             (elfeed-web-ng--send-json-error 501 "elfeed-curate not available")
-          (let* ((content (decode-coding-string
-                           (cadr (assoc "Content" httpd-request)) 'utf-8))
-                 (json-data (ignore-errors (json-read-from-string content)))
-                 (annotation (cdr (assoc 'annotation json-data))))
+          (let* ((json-data (elfeed-web-ng--request-json))
+                 (annotation (alist-get 'annotation json-data)))
             (if (null json-data)
                 (elfeed-web-ng--send-json-error 400 "invalid JSON")
               (elfeed-curate-set-entry-annotation entry (or annotation ""))

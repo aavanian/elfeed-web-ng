@@ -406,6 +406,62 @@ ARGS are those of `elfeed-web-ng-test--request'."
         (should-not (elfeed-web-ng-lookup "../etc"))
         (should (= 0 calls))))))
 
+;;; Tag updates.
+
+(ert-deftest elfeed-web-ng-test-valid-tag ()
+  "Tags are short words of letters, digits, - and _, plus the star."
+  (should (elfeed-web-ng--valid-tag-p "unread"))
+  (should (elfeed-web-ng--valid-tag-p "to_source-2"))
+  (should (elfeed-web-ng--valid-tag-p "★"))
+  (should (elfeed-web-ng--valid-tag-p (make-string 64 ?a)))
+  (should-not (elfeed-web-ng--valid-tag-p (make-string 65 ?a)))
+  (should-not (elfeed-web-ng--valid-tag-p ""))
+  (should-not (elfeed-web-ng--valid-tag-p "two words"))
+  (should-not (elfeed-web-ng--valid-tag-p "a/b"))
+  (should-not (elfeed-web-ng--valid-tag-p 'unread))
+  (should-not (elfeed-web-ng--valid-tag-p 5)))
+
+(defun elfeed-web-ng-test--put-tags (body)
+  "PUT BODY to /elfeed/tags and return the response."
+  (elfeed-web-ng-test--request "PUT" "/elfeed/tags" :body body))
+
+(ert-deftest elfeed-web-ng-test-tags-rejects-malformed-requests ()
+  "Each malformed tag request gets its own 4xx status, never a 500."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let ((webid (elfeed-web-ng-make-webid (elfeed-web-ng-test--add-entry))))
+        (should (equal 405 (elfeed-web-ng-test--status "GET" "/elfeed/tags")))
+        (dolist (case
+                 `((nil . 400)
+                   ("" . 400)
+                   ("not json" . 400)
+                   ("[1, 2]" . 400)
+                   ("{\"entries\": 5}" . 400)
+                   ("{\"entries\": \"aaaaaaaaaaaa\"}" . 400)
+                   (,(format "{\"add\": \"unread\", \"entries\": [%S]}" webid) . 400)
+                   (,(format "{\"add\": [\"a b\"], \"entries\": [%S]}" webid) . 400)
+                   (,(format "{\"remove\": [5], \"entries\": [%S]}" webid) . 400)
+                   ("{\"add\": [\"x\"], \"entries\": [\"aaaaaaaaaaaa\"]}" . 404)
+                   ("{\"add\": [\"x\"], \"entries\": [5]}" . 404)))
+          (should (equal case
+                         (cons (car case)
+                               (plist-get (elfeed-web-ng-test--put-tags (car case))
+                                          :status)))))))))
+
+(ert-deftest elfeed-web-ng-test-tags-updates-entries ()
+  "A valid tag request applies the change and returns each entry's tags."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let* ((entry (elfeed-web-ng-test--add-entry))
+             (webid (elfeed-web-ng-make-webid entry))
+             (response (elfeed-web-ng-test--put-tags
+                        (format "{\"add\": [\"★\"], \"remove\": [\"unread\"], \"entries\": [%S]}"
+                                webid))))
+        (should (equal 200 (plist-get response :status)))
+        (should (equal (list '★) (elfeed-entry-tags entry)))
+        (should (equal `((,(intern webid) . ["★"]))
+                       (elfeed-web-ng-test--json response)))))))
+
 ;;; JSON shape served to the frontend.
 
 (defun elfeed-web-ng-test--round-trip (thing)
