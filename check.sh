@@ -1,5 +1,6 @@
 #!/bin/bash
-# Run every automated check: lint, byte-compilation and the ERT suite.
+# Run every automated check: lint, byte-compilation, the ERT suite, and
+# a rebuild of the frontend compared against the committed web/.
 #
 # The elisp dependencies are looked up in the straight.el build directory
 # this checkout normally lives next to.  Point ELFEED_DIR and HTTPD_DIR at
@@ -60,7 +61,35 @@ run_ert() {
 	run_emacs -l test/elfeed-web-ng-test.el -f ert-run-tests-batch-and-exit
 }
 
+# Print the build stamps baked into the committed bundle, as JSON.
+committed_stamps() {
+	node -e '
+const src = require("fs").readFileSync("web/assets/index.js", "utf8");
+const m = src.match(/\{describe:"[^"]*",branch:"[^"]*",commit:"[^"]*",buildId:"[^"]*",date:"[^"]*"\}/);
+if (!m) { console.error("no build stamps in web/assets/index.js"); process.exit(1); }
+process.stdout.write(m[0].replace(/(\w+):"/g, (_, key) => "\"" + key + "\":\""));
+'
+}
+
+# Users only ever run the committed web/, so it must be what src/ builds.
+check_bundle() {
+	echo "== bundle matches src/"
+	local tmp stamps
+	stamps=$(committed_stamps)
+	tmp=$(mktemp -d)
+	ELFEED_BUILD_STAMPS=$stamps \
+		pnpm exec vite build --logLevel error --outDir "$tmp" --emptyOutDir
+	if ! diff -r web "$tmp" >/dev/null; then
+		diff -r -q web "$tmp" >&2 || true
+		echo "web/ is stale: run 'pnpm build' and commit web/" >&2
+		rm -rf "$tmp"
+		exit 1
+	fi
+	rm -rf "$tmp"
+}
+
 check_dependencies
 lint_shell
 byte_compile
 run_ert
+check_bundle
