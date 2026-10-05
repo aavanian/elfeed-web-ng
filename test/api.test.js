@@ -52,3 +52,35 @@ test('getContent fails rather than return an error page as content', async () =>
   });
   await assert.rejects(api.getContent('abc'));
 });
+
+// Answer tag updates like the server: apply them and return each entry's tags.
+function tagServer(initial) {
+  const sent = [];
+  globalThis.fetch = async (url, options) => {
+    const body = JSON.parse(options.body);
+    sent.push({ url, method: options.method, body });
+    const tags = initial.filter((t) => !body.remove.includes(t)).concat(body.add);
+    return { ok: true, status: 200, json: async () => ({ [body.entries[0]]: tags }) };
+  };
+  return sent;
+}
+
+test('toggleTag removes a tag the entry has', async () => {
+  const sent = tagServer(['unread', 'later']);
+  const entry = { webid: 'w1', title: 'T', tags: ['unread', 'later'] };
+  const updated = await api.toggleTag(entry, 'unread');
+  assert.deepEqual(sent, [{ url: '/elfeed/tags', method: 'PUT',
+    body: { add: [], remove: ['unread'], entries: ['w1'] } }]);
+  assert.deepEqual(updated, { webid: 'w1', title: 'T', tags: ['later'] });
+});
+
+test('toggleTag adds a tag the entry lacks', async () => {
+  tagServer([]);
+  const updated = await api.toggleTag({ webid: 'w1' }, '★');
+  assert.deepEqual(updated.tags, ['★']);
+});
+
+test('toggleTag fails when the server refuses', async () => {
+  globalThis.fetch = async () => ({ ok: false, status: 400 });
+  await assert.rejects(api.toggleTag({ webid: 'w1', tags: [] }, 'later'));
+});

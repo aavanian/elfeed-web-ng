@@ -13,18 +13,13 @@ export function TagActions({ entry, onTagsChanged }) {
     setPending(tag);
     setError(null);
     try {
-      const has = tags.includes(tag);
-      const add = has ? [] : [tag];
-      const remove = has ? [tag] : [];
-      await api.updateTags(add, remove, [entry.webid]);
-      const newTags = has ? tags.filter(t => t !== tag) : [...tags, tag];
-      onTagsChanged({ ...entry, tags: newTags });
+      onTagsChanged(await api.toggleTag(entry, tag));
     } catch {
       setError(`Could not update ${tag}.`);
     } finally {
       setPending(null);
     }
-  }, [entry, tags, onTagsChanged, pending]);
+  }, [entry, onTagsChanged, pending]);
 
   const isUnread = tags.includes('unread');
   const disabled = pending !== null;

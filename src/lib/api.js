@@ -31,7 +31,7 @@ export async function getContent(ref) {
   return res.text();
 }
 
-export async function updateTags(add, remove, entries) {
+async function updateTags(add, remove, entries) {
   const res = await fetch(`${BASE}/tags`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -39,6 +39,14 @@ export async function updateTags(add, remove, entries) {
   });
   if (!res.ok) throw new Error(`Tag update failed: ${res.status}`);
   return res.json();
+}
+
+// Add TAG to ENTRY, or remove it when the entry has it. Resolves to a copy
+// of the entry carrying the tags the server reports after the change.
+export async function toggleTag(entry, tag) {
+  const has = entry.tags?.includes(tag) ?? false;
+  const result = await updateTags(has ? [] : [tag], has ? [tag] : [], [entry.webid]);
+  return { ...entry, tags: result[entry.webid] };
 }
 
 export async function feedUpdateDone() {
