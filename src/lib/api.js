@@ -25,8 +25,10 @@ export async function search(query) {
   return res.json();
 }
 
-export function getContentUrl(ref) {
-  return `${BASE}/content/${ref}`;
+export async function getContent(ref) {
+  const res = await fetch(`${BASE}/content/${ref}`);
+  if (!res.ok) throw new Error(`Content request failed: ${res.status}`);
+  return res.text();
 }
 
 export async function updateTags(add, remove, entries) {

@@ -64,27 +64,28 @@ function rewriteLinks(html) {
 }
 
 export function EntryContent({ entry, onBack }) {
-  const contentUrl = entry.content ? api.getContentUrl(entry.content) : null;
+  const ref = entry.content;
   const [srcdoc, setSrcdoc] = useState(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (!contentUrl) {
-      setSrcdoc(null);
-      return;
-    }
+    // Back to the placeholder while the next entry loads, so its frame is
+    // mounted afresh rather than navigated (see the iframe note below).
+    setSrcdoc(null);
+    setFailed(false);
+    if (!ref) return;
     let cancelled = false;
-    fetch(contentUrl)
-      .then((res) => res.text())
+    api.getContent(ref)
       .then((html) => {
         if (!cancelled) setSrcdoc(CONTENT_STYLE + rewriteLinks(html));
       })
       .catch(() => {
-        if (!cancelled) setSrcdoc(CONTENT_STYLE);
+        if (!cancelled) setFailed(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [contentUrl]);
+  }, [ref]);
 
   const handleEntryUpdated = useCallback((updatedEntry) => {
     store.replaceEntry(updatedEntry);
@@ -115,8 +116,10 @@ export function EntryContent({ entry, onBack }) {
         <AnnotationEditor entry={entry} onAnnotationChanged={handleEntryUpdated} />
       </div>
 
-      {!contentUrl ? (
+      {!ref ? (
         <p class="secondary">No content available.</p>
+      ) : failed ? (
+        <p class="error-inline" role="alert">Could not load content.</p>
       ) : srcdoc === null ? (
         // Wait for the content before mounting the iframe: swapping srcdoc on a
         // live iframe counts as a navigation and pushes a phantom session-history
