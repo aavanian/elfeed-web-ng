@@ -116,7 +116,9 @@ pnpm run build  # Production build to web/
 ### Tests
 
 `./check.sh` runs every automated check and exits non-zero on the first
-failure. It needs the elisp dependencies, elfeed and simple-httpd. By default it
+failure: shellcheck, byte-compilation, the ERT suite, the frontend tests, and a
+rebuild of the frontend that must match the committed `web/`. It needs
+`pnpm install` to have run, and the elisp dependencies, elfeed and simple-httpd. By default it
 takes them from the straight.el build directory next to this checkout
 (`../../build-<emacs-version>/`). Point it elsewhere with:
 
@@ -124,6 +126,7 @@ takes them from the straight.el build directory next to this checkout
 ELFEED_DIR=/path/to/elfeed HTTPD_DIR=/path/to/simple-httpd ./check.sh
 ```
 
+To run only the frontend tests (Node's built-in test runner), use `pnpm test`.
 To run only the ERT suite:
 
 ```sh

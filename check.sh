@@ -1,6 +1,6 @@
 #!/bin/bash
-# Run every automated check: lint, byte-compilation, the ERT suite, and
-# a rebuild of the frontend compared against the committed web/.
+# Run every automated check: lint, byte-compilation, the ERT and frontend
+# suites, and a rebuild of the frontend compared against the committed web/.
 #
 # The elisp dependencies are looked up in the straight.el build directory
 # this checkout normally lives next to.  Point ELFEED_DIR and HTTPD_DIR at
@@ -23,6 +23,10 @@ ELFEED_DIR=${ELFEED_DIR:-$(straight_build_dir)/elfeed}
 HTTPD_DIR=${HTTPD_DIR:-$(straight_build_dir)/simple-httpd}
 
 check_dependencies() {
+	if [ ! -d node_modules ]; then
+		echo "missing node_modules: run 'pnpm install'" >&2
+		exit 1
+	fi
 	local dir
 	for dir in "$ELFEED_DIR" "$HTTPD_DIR"; do
 		if [ ! -d "$dir" ]; then
@@ -71,6 +75,11 @@ process.stdout.write(m[0].replace(/(\w+):"/g, (_, key) => "\"" + key + "\":\""))
 '
 }
 
+run_node_tests() {
+	echo "== frontend tests"
+	pnpm test
+}
+
 # Users only ever run the committed web/, so it must be what src/ builds.
 check_bundle() {
 	echo "== bundle matches src/"
@@ -92,4 +101,5 @@ check_dependencies
 lint_shell
 byte_compile
 run_ert
+run_node_tests
 check_bundle
