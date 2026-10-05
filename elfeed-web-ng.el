@@ -18,16 +18,19 @@
 ;;
 ;; Endpoints:
 ;;
-;; /elfeed/<path>           -- static files (HTML, JS, CSS)
-;; /elfeed/api              -- server capabilities
-;; /elfeed/search?q=FILTER  -- search entries
-;; /elfeed/content/<ref>    -- entry content (HTML)
-;; /elfeed/tags             -- PUT to modify entry tags
-;; /elfeed/feed-update      -- trigger a feed update
-;; /elfeed/feed-update-done -- long-poll until feed update completes
-;; /elfeed/mark-all-read    -- remove unread from all entries
-;; /elfeed/saved-searches   -- configured saved searches
-;; /elfeed/annotation/<id>  -- GET/PUT entry annotations (requires elfeed-curate)
+;; GET  /elfeed/<path>            -- static files (HTML, JS, CSS)
+;; GET  /elfeed/api               -- server version and optional features
+;; GET  /elfeed/search?q=FILTER   -- search entries
+;; GET  /elfeed/content/<ref>     -- entry content (HTML)
+;; PUT  /elfeed/tags              -- add and remove tags on entries
+;; POST /elfeed/feed-update       -- trigger a feed update
+;; GET  /elfeed/feed-update-done  -- long-poll until the feed update completes
+;; POST /elfeed/mark-all-read     -- remove unread from all entries
+;; GET  /elfeed/saved-searches    -- configured saved searches
+;; PUT  /elfeed/annotation/<id>   -- set an entry annotation (requires elfeed-curate)
+;; GET  /favicon.ico              -- redirect to the app icon
+;;
+;; The PUT and POST endpoints answer any other method with 405.
 
 ;;; Code:
 
@@ -614,7 +617,7 @@ forever."
             (elfeed-web-ng--serve-static path request))))))))
 
 (defun httpd/favicon.ico (proc &rest _)
-  "Redirect /favicon.ico to /elfeed/favicon.ico."
+  "Redirect /favicon.ico to the app icon, /elfeed/icons/favicon_dark.svg."
   (httpd-redirect proc "/elfeed/icons/favicon_dark.svg"))
 
 

@@ -659,6 +659,35 @@ No /feed-update request ever starts the poll chain in this case."
                      (elfeed-web-ng-test--run-timers)))
       (should-not elfeed-web-ng--feed-done-waiting))))
 
+;;; Package documentation.
+
+(defun elfeed-web-ng-test--source-file ()
+  "Return the file `elfeed-web-ng' was loaded from, as source."
+  (concat (file-name-sans-extension (locate-library "elfeed-web-ng")) ".el"))
+
+(ert-deftest elfeed-web-ng-test-commentary-lists-servlets ()
+  "The Commentary lists every servlet path with its method."
+  (require 'lisp-mnt)
+  (let ((commentary (lm-commentary (elfeed-web-ng-test--source-file)))
+        (paths nil))
+    (mapatoms
+     (lambda (sym)
+       (let ((name (symbol-name sym)))
+         (when (and (fboundp sym)
+                    (string-match "\\`httpd\\(/\\(?:elfeed\\|favicon\\).*\\)" name))
+           (push (match-string 1 name) paths)))))
+    (should (member "/elfeed" paths))
+    (dolist (path paths)
+      (let ((listed (replace-regexp-in-string "\\`/elfeed\\'" "/elfeed/" path)))
+        (should (equal (list path t)
+                       (list path
+                             (and (string-match-p
+                                   (concat "^\\(GET\\|PUT\\|POST\\) +"
+                                           (regexp-quote listed)
+                                           "[ ?</]")
+                                   commentary)
+                                  t))))))))
+
 ;;; Server capabilities.
 
 (ert-deftest elfeed-web-ng-test-api-features ()
