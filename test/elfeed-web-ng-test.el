@@ -257,7 +257,6 @@ ARGS are those of `elfeed-web-ng-test--request'."
     ("GET" "/elfeed/manifest.json")
     ("GET" "/elfeed/api")
     ("GET" "/elfeed/search?q=")
-    ("GET" "/elfeed/things/aaaaaaaaaaaa")
     ("GET" "/elfeed/content/da39a3ee5e6b4b0d3255bfef95601890afd80709")
     ("GET" "/elfeed/saved-searches")
     ("GET" "/elfeed/feed-update-done")
@@ -280,6 +279,26 @@ ARGS are those of `elfeed-web-ng-test--request'."
   `(cl-letf (((symbol-function 'elfeed-update) #'ignore)
              ((symbol-function 'elfeed-queue-count-total) (lambda () 0)))
      ,@body))
+
+(defmacro elfeed-web-ng-test--with-curate (&rest body)
+  "Run BODY with a stand-in for elfeed-curate.
+Annotations live in the entry's meta, and setting a non-string signals,
+as the real package does."
+  (declare (indent 0))
+  ;; `featurep' ignores a let-binding of `features', so provide the
+  ;; feature for real and withdraw it afterwards.
+  `(let ((provided (featurep 'elfeed-curate)))
+     (unwind-protect
+         (cl-letf (((symbol-function 'elfeed-curate-get-entry-annotation)
+                    (lambda (entry) (or (elfeed-meta entry :test-annotation) "")))
+                   ((symbol-function 'elfeed-curate-set-entry-annotation)
+                    (lambda (entry annotation)
+                      (cl-check-type annotation string)
+                      (setf (elfeed-meta entry :test-annotation) annotation))))
+           (provide 'elfeed-curate)
+           ,@body)
+       (unless provided
+         (setq features (delq 'elfeed-curate features))))))
 
 ;;; Request guards.
 
@@ -360,13 +379,25 @@ names stay in the Host allowlist."
                                (list req (plist-get response :status))))))))))))
 
 (ert-deftest elfeed-web-ng-test-guard-method ()
-  "State-changing POST endpoints refuse GET."
+  "State-changing endpoints refuse GET, even for an existing entry."
   (elfeed-web-ng-test--with-server
     (elfeed-web-ng-test--with-db
       (elfeed-web-ng-test--with-feed-update-stubs
-        (dolist (uri '("/elfeed/mark-all-read" "/elfeed/feed-update"))
-          (should (equal (list uri 405)
-                         (list uri (elfeed-web-ng-test--status "GET" uri)))))))))
+        (elfeed-web-ng-test--with-curate
+          (let ((webid (elfeed-web-ng-make-webid (elfeed-web-ng-test--add-entry))))
+            (dolist (uri (list "/elfeed/mark-all-read" "/elfeed/feed-update"
+                               "/elfeed/tags"
+                               (concat "/elfeed/annotation/" webid)))
+              (should (equal (list uri 405)
+                             (list uri (elfeed-web-ng-test--status "GET" uri)))))))))))
+
+(ert-deftest elfeed-web-ng-test-no-things-endpoint ()
+  "Entries are only served through search; there is no per-thing endpoint."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let ((webid (elfeed-web-ng-make-webid (elfeed-web-ng-test--add-entry))))
+        (should (equal 404 (elfeed-web-ng-test--status
+                            "GET" (concat "/elfeed/things/" webid))))))))
 
 (ert-deftest elfeed-web-ng-test-content-csp ()
   "Entry content is served with a CSP that sandboxes it."
@@ -491,7 +522,6 @@ app page's referrer policy, so the app shell must carry it too."
   (elfeed-web-ng-test--with-server
     (elfeed-web-ng-test--with-db
       (let ((webid (elfeed-web-ng-make-webid (elfeed-web-ng-test--add-entry))))
-        (should (equal 405 (elfeed-web-ng-test--status "GET" "/elfeed/tags")))
         (dolist (case
                  `((nil . 400)
                    ("" . 400)
@@ -678,26 +708,6 @@ No /feed-update request ever starts the poll chain in this case."
         (should (equal 200 (plist-get (elfeed-web-ng-test--put-tags
                                        "{\"entries\": []}")
                                       :status)))))))
-
-(defmacro elfeed-web-ng-test--with-curate (&rest body)
-  "Run BODY with a stand-in for elfeed-curate.
-Annotations live in the entry's meta, and setting a non-string signals,
-as the real package does."
-  (declare (indent 0))
-  ;; `featurep' ignores a let-binding of `features', so provide the
-  ;; feature for real and withdraw it afterwards.
-  `(let ((provided (featurep 'elfeed-curate)))
-     (unwind-protect
-         (cl-letf (((symbol-function 'elfeed-curate-get-entry-annotation)
-                    (lambda (entry) (or (elfeed-meta entry :test-annotation) "")))
-                   ((symbol-function 'elfeed-curate-set-entry-annotation)
-                    (lambda (entry annotation)
-                      (cl-check-type annotation string)
-                      (setf (elfeed-meta entry :test-annotation) annotation))))
-           (provide 'elfeed-curate)
-           ,@body)
-       (unless provided
-         (setq features (delq 'elfeed-curate features))))))
 
 (ert-deftest elfeed-web-ng-test-annotation-type ()
   "Only a string or null is accepted as an annotation."

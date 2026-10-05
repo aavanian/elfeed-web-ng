@@ -21,7 +21,6 @@
 ;; /elfeed/<path>           -- static files (HTML, JS, CSS)
 ;; /elfeed/api              -- server capabilities
 ;; /elfeed/search?q=FILTER  -- search entries
-;; /elfeed/things/<webid>   -- entry or feed as JSON
 ;; /elfeed/content/<ref>    -- entry content (HTML)
 ;; /elfeed/tags             -- PUT to modify entry tags
 ;; /elfeed/feed-update      -- trigger a feed update
@@ -366,11 +365,6 @@ must be called inside a `defservlet*' body."
   "Return the value of KEY, a string, in the JSON object alist JSON."
   (cdr (assoc key json)))
 
-(defservlet* elfeed/things/:webid application/json ()
-  "Return a requested thing (entry or feed)."
-  (elfeed-web-ng--with
-    (princ (json-encode (elfeed-web-ng-for-json (elfeed-web-ng-lookup webid))))))
-
 (defservlet* elfeed/content/:ref text/html ()
   "Serve content-addressable content at REF."
   (elfeed-web-ng--with
@@ -502,36 +496,29 @@ The current set of tags for each entry will be returned."
                      elfeed-web-ng-saved-searches))))))
 
 (defservlet* elfeed/annotation/:webid application/json ()
-  "GET or PUT an annotation on an entry.
-Requires elfeed-curate to be loaded; returns 501 otherwise for PUT,
-and empty string for GET."
+  "Set the annotation of an entry from a PUT JSON body.
+The body is an object whose \"annotation\" is a string, or null to
+clear it.  Requires elfeed-curate to be loaded; answers 501 otherwise.
+Annotations are read from the search results, not from here."
   (elfeed-web-ng--with
-    (let* ((method (caar httpd-request))
-           (entry (elfeed-web-ng-lookup webid)))
-      (cond
-       ((null entry)
-        (elfeed-web-ng--send-json-error 404 "not found"))
-       ((equal method "GET")
-        (let ((annotation (if (featurep 'elfeed-curate)
-                              (elfeed-curate-get-entry-annotation entry)
-                            "")))
-          (princ (json-encode (list :webid webid :annotation annotation)))))
-       ((equal method "PUT")
-        (if (not (featurep 'elfeed-curate))
-            (elfeed-web-ng--send-json-error 501 "elfeed-curate not available")
-          (let* ((json-data (elfeed-web-ng--request-json))
-                 (annotation (elfeed-web-ng--json-field json-data "annotation")))
-            (cond
-             ((null json-data)
-              (elfeed-web-ng--send-json-error 400 "invalid JSON"))
-             ((not (or (null annotation) (stringp annotation)))
-              (elfeed-web-ng--send-json-error 400 "annotation must be a string"))
-             (t
-              (elfeed-curate-set-entry-annotation entry (or annotation ""))
-              (princ (json-encode (list :webid webid
-                                        :annotation (elfeed-curate-get-entry-annotation entry)))))))))
-       (t
-        (elfeed-web-ng--send-json-error 405 "method not allowed"))))))
+    (elfeed-web-ng--with-method "PUT"
+      (let* ((entry (elfeed-web-ng-lookup webid))
+             (json (elfeed-web-ng--request-json))
+             (annotation (elfeed-web-ng--json-field json "annotation")))
+        (cond
+         ((null entry)
+          (elfeed-web-ng--send-json-error 404 "not found"))
+         ((not (featurep 'elfeed-curate))
+          (elfeed-web-ng--send-json-error 501 "elfeed-curate not available"))
+         ((null json)
+          (elfeed-web-ng--send-json-error 400 "invalid JSON"))
+         ((not (or (null annotation) (stringp annotation)))
+          (elfeed-web-ng--send-json-error 400 "annotation must be a string"))
+         (t
+          (elfeed-curate-set-entry-annotation entry (or annotation ""))
+          (princ (json-encode
+                  (list :webid webid
+                        :annotation (elfeed-curate-get-entry-annotation entry))))))))))
 
 (defvar elfeed-web-ng--feed-done-timer nil
   "Active completion-poll timer, or nil when no poll chain is running.
