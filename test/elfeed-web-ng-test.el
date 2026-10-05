@@ -23,6 +23,14 @@
   (should (equal "[::1]" (elfeed-web-ng--strip-port "[::1]:8080")))
   (should (equal "[::1]" (elfeed-web-ng--strip-port "[::1]"))))
 
+(ert-deftest elfeed-web-ng-test-hostname ()
+  "Hostnames compare without port, case or IPv6 brackets."
+  (should (null (elfeed-web-ng--hostname nil)))
+  (should (equal "feeds.example.net" (elfeed-web-ng--hostname "Feeds.Example.Net:80")))
+  (should (equal "::1" (elfeed-web-ng--hostname "[::1]:8080")))
+  (should (equal "::1" (elfeed-web-ng--hostname "[::1]")))
+  (should (equal "::1" (elfeed-web-ng--hostname "::1"))))
+
 ;;; Effective allowlist.
 
 (ert-deftest elfeed-web-ng-test-effective-hosts-explicit ()
@@ -61,6 +69,7 @@
     (should (elfeed-web-ng--host-allowed-p "Feeds.Example.Net"))
     ;; Loopback is always allowed.
     (should (elfeed-web-ng--host-allowed-p "localhost:8080"))
+    (should (elfeed-web-ng--host-allowed-p "[::1]:8080"))
     ;; A rebound origin keeps its own Host header.
     (should-not (elfeed-web-ng--host-allowed-p "evil.example.com"))
     (should-not (elfeed-web-ng--host-allowed-p nil))))
@@ -68,17 +77,32 @@
 ;;; Origin check.
 
 (ert-deftest elfeed-web-ng-test-origin-allowed ()
-  (let ((elfeed-web-ng-allowed-hosts '("feeds.example.net"))
-        (httpd-host nil))
-    ;; A missing Origin defers to the Host check.
-    (should (elfeed-web-ng--origin-allowed-p nil))
-    ;; Same-site origins pass, port and scheme notwithstanding.
-    (should (elfeed-web-ng--origin-allowed-p "http://feeds.example.net:8080"))
-    (should (elfeed-web-ng--origin-allowed-p "https://feeds.example.net"))
-    (should (elfeed-web-ng--origin-allowed-p "http://localhost:8080"))
-    ;; Cross-site and opaque origins are rejected.
-    (should-not (elfeed-web-ng--origin-allowed-p "http://evil.example.com"))
-    (should-not (elfeed-web-ng--origin-allowed-p "null"))))
+  "An Origin must name the host and port the request was addressed to."
+  ;; A missing Origin defers to the Host check.
+  (should (elfeed-web-ng--origin-allowed-p nil "feeds.example.net"))
+  ;; Same origin, with the port explicit or implied by the scheme.
+  (should (elfeed-web-ng--origin-allowed-p "http://feeds.example.net:8080"
+                                           "feeds.example.net:8080"))
+  (should (elfeed-web-ng--origin-allowed-p "http://Feeds.Example.Net:8080"
+                                           "feeds.example.net:8080"))
+  (should (elfeed-web-ng--origin-allowed-p "https://feeds.example.net"
+                                           "feeds.example.net"))
+  (should (elfeed-web-ng--origin-allowed-p "http://feeds.example.net"
+                                           "feeds.example.net:80"))
+  (should (elfeed-web-ng--origin-allowed-p "http://[::1]:8082" "[::1]:8082"))
+  ;; Another service on the same machine is another origin.
+  (should-not (elfeed-web-ng--origin-allowed-p "http://localhost:3000"
+                                               "localhost:8082"))
+  (should-not (elfeed-web-ng--origin-allowed-p "http://localhost:3000"
+                                               "127.0.0.1:8082"))
+  (should-not (elfeed-web-ng--origin-allowed-p "http://feeds.example.net"
+                                               "feeds.example.net:8080"))
+  ;; Cross-site, opaque and malformed origins are rejected.
+  (should-not (elfeed-web-ng--origin-allowed-p "http://evil.example.com:8080"
+                                               "feeds.example.net:8080"))
+  (should-not (elfeed-web-ng--origin-allowed-p "null" "feeds.example.net"))
+  (should-not (elfeed-web-ng--origin-allowed-p "garbage" "feeds.example.net"))
+  (should-not (elfeed-web-ng--origin-allowed-p "http://feeds.example.net" nil)))
 
 ;;; Content ref validation.
 
@@ -294,6 +318,27 @@ ARGS are those of `elfeed-web-ng-test--request'."
                                  (elfeed-web-ng-test--status
                                   (car req) (cadr req)
                                   :origin origin :body "{}"))))))))))
+
+(ert-deftest elfeed-web-ng-test-guard-local-cross-origin ()
+  "Another web service on the same machine cannot drive the API.
+Covers both a loopback bind and a tailnet bind, where the loopback
+names stay in the Host allowlist."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--with-feed-update-stubs
+        (dolist (bind '("127.0.0.1" "100.64.0.1"))
+          (let ((httpd-host bind)
+                (host (concat bind ":8082")))
+            (dolist (req elfeed-web-ng-test--state-changing-requests)
+              (should (equal (list bind req 403)
+                             (list bind req
+                                   (elfeed-web-ng-test--status
+                                    (car req) (cadr req) :host host
+                                    :origin "http://localhost:3000"
+                                    :body "{}")))))
+            (should (equal 200 (elfeed-web-ng-test--status
+                                "POST" "/elfeed/mark-all-read" :host host
+                                :origin (concat "http://" host))))))))))
 
 (ert-deftest elfeed-web-ng-test-guard-disabled ()
   "A disabled interface serves no API and no app."

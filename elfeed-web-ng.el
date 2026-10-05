@@ -65,8 +65,9 @@ Example: \\='((:label \"Unread\" :filter \"+unread\"))"
   "Hostnames permitted in the HTTP Host and Origin request headers.
 
 Requests whose Host header names a host outside this list are rejected,
-which blocks DNS-rebinding attacks; the same list gates the Origin
-header on cross-site requests, which blocks CSRF.
+which blocks DNS-rebinding attacks.  Cross-site requests are blocked
+separately: a request carrying an Origin header must come from the
+same host and port it was sent to.
 
 When nil the allowlist is derived automatically from `httpd-host' (when
 it names a specific address) plus the loopback names.  That default
@@ -75,9 +76,11 @@ configuration.  Set this to a list of hostname strings to permit
 additional names, for example a Tailscale MagicDNS name reached
 alongside the raw tailnet IP.  Ports are ignored; list bare hostnames.
 
-Loopback names are always permitted: they cannot be the target of a
-DNS-rebinding attack, since the browser only sends them when the user
-genuinely navigated to a loopback address."
+Loopback names (including \"[::1]\") are always permitted: they cannot be
+the target of a DNS-rebinding attack, since the browser only sends them
+when the user genuinely navigated to a loopback address, for example
+through an SSH tunnel.  Other services on the same machine are still
+kept out by the Origin check."
   :group 'elfeed
   :type '(choice (const :tag "Auto (derive from `httpd-host')" nil)
                  (repeat string)))
@@ -229,6 +232,20 @@ Handles bracketed IPv6 literals such as \"[::1]:8080\"."
    ((string-match "\\`\\([^:]*\\):[0-9]+\\'" host) (match-string 1 host))
    (t host)))
 
+(defun elfeed-web-ng--hostname (host)
+  "Return the hostname in HOST in a comparable form, or nil.
+HOST is a Host header value, an allowlist entry or a URL host.  The
+port, letter case and IPv6 brackets are dropped, so \"[::1]:8082\" and
+\"::1\" compare equal."
+  (when-let* ((name (elfeed-web-ng--strip-port host)))
+    (downcase (string-trim name "\\[" "\\]"))))
+
+(defun elfeed-web-ng--host-port (host)
+  "Return the port number in the Host header value HOST, or nil."
+  (and host
+       (string-match "\\(?:\\`[^:]*\\|\\]\\):\\([0-9]+\\)\\'" host)
+       (string-to-number (match-string 1 host))))
+
 (defun elfeed-web-ng--effective-allowed-hosts ()
   "Return the normalized list of permitted hostnames.
 Combines the loopback names with `elfeed-web-ng-allowed-hosts', or, when
@@ -238,25 +255,35 @@ that is nil, with `httpd-host' if it names a specific address."
                  (and (stringp httpd-host)
                       (not (member httpd-host '("0.0.0.0" "::")))
                       (list httpd-host)))))
-    (mapcar (lambda (h) (downcase (elfeed-web-ng--strip-port h)))
+    (mapcar #'elfeed-web-ng--hostname
             (append elfeed-web-ng--loopback-hosts extra))))
 
 (defun elfeed-web-ng--host-allowed-p (host)
   "Return non-nil if the Host header HOST is permitted."
-  (and-let* ((name (and host (downcase (elfeed-web-ng--strip-port host)))))
+  (and-let* ((name (elfeed-web-ng--hostname host)))
     (and (member name (elfeed-web-ng--effective-allowed-hosts)) t)))
 
-(defun elfeed-web-ng--origin-allowed-p (origin)
-  "Return non-nil if ORIGIN is absent or names a permitted host.
-A missing Origin is permitted; the Host check guards those requests.  An
-opaque \"null\" origin, or one naming a host outside the allowlist, is
-rejected so cross-site requests cannot drive state-changing endpoints."
+(defun elfeed-web-ng--origin-allowed-p (origin host)
+  "Return non-nil if ORIGIN is absent or names the server at HOST.
+ORIGIN and HOST are the values of the request headers of those names.
+A missing Origin is permitted; the Host check guards those requests.
+Otherwise the Origin must name the very host and port the request was
+addressed to: matching the hostname alone would admit any other web
+service on the same machine, such as a dev server on localhost, as a
+source of cross-site requests.  A port missing from HOST is the
+default port of the Origin's scheme.  The scheme itself is not
+compared, so a TLS-terminating proxy in front of the server still
+works.  An opaque \"null\" origin is rejected."
   (or (null origin)
-      (and-let* ((host (and (not (equal origin "null"))
-                            (ignore-errors
-                              (url-host (url-generic-parse-url origin))))))
-        (and (member (downcase host) (elfeed-web-ng--effective-allowed-hosts))
-             t))))
+      (and-let* (((not (equal origin "null")))
+                 (url (ignore-errors (url-generic-parse-url origin)))
+                 (origin-name (elfeed-web-ng--hostname (url-host url)))
+                 ((not (string-empty-p origin-name))))
+        (and (equal origin-name (elfeed-web-ng--hostname host))
+             (equal (url-port url)
+                    (or (elfeed-web-ng--host-port host)
+                        (url-scheme-get-property (url-type url)
+                                                 'default-port)))))))
 
 (defun elfeed-web-ng--reject (header value)
   "Send a generic 403 for a request rejected by the HEADER allowlist.
@@ -284,15 +311,17 @@ MESSAGE, when non-nil, is the error payload in place of the numeric STATUS."
 
 (defmacro elfeed-web-ng--with (&rest body)
   "Execute BODY for a permitted, enabled request, else send an error.
-Rejects the request when its Host or Origin header falls outside
-`elfeed-web-ng-allowed-hosts', sends 403 when the interface is
+Rejects the request when its Host header falls outside
+`elfeed-web-ng-allowed-hosts' or its Origin header names another
+server (see `elfeed-web-ng--origin-allowed-p'), sends 403 when the interface is
 disabled, and 413 when the request body exceeds
 `elfeed-web-ng--max-body-size'."
   (declare (indent 0))
   `(cond
     ((not (elfeed-web-ng--host-allowed-p (elfeed-web-ng--header "Host")))
      (elfeed-web-ng--reject "Host" (elfeed-web-ng--header "Host")))
-    ((not (elfeed-web-ng--origin-allowed-p (elfeed-web-ng--header "Origin")))
+    ((not (elfeed-web-ng--origin-allowed-p (elfeed-web-ng--header "Origin")
+                                           (elfeed-web-ng--header "Host")))
      (elfeed-web-ng--reject "Origin" (elfeed-web-ng--header "Origin")))
     ((not elfeed-web-ng-enabled)
      (elfeed-web-ng--send-json-error 403))
