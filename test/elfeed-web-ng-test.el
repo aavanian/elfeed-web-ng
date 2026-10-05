@@ -2,10 +2,11 @@
 
 ;;; Commentary:
 
-;; ERT tests for the request-guarding helpers.  Run with:
+;; ERT tests for the elfeed-web-ng server.  `./check.sh' runs them; to
+;; run them alone, put elfeed and simple-httpd on the load path:
 ;;
-;;   emacs --batch -L <deps> -L . -l test/elfeed-web-ng-test.el \
-;;         -f ert-run-tests-batch-and-exit
+;;   emacs --batch -L "$ELFEED_DIR" -L "$HTTPD_DIR" -L . \
+;;         -l test/elfeed-web-ng-test.el -f ert-run-tests-batch-and-exit
 
 ;;; Code:
 
