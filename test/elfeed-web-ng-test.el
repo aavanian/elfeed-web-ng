@@ -347,5 +347,64 @@ ARGS are those of `elfeed-web-ng-test--request'."
                             :origin "http://127.0.0.1:8082")))
         (should-not (memq 'unread (elfeed-entry-tags entry)))))))
 
+;;; Webid generation and lookup.
+
+(defmacro elfeed-web-ng-test--counting-webids (counter &rest body)
+  "Run BODY, counting calls to `elfeed-web-ng-make-webid' in COUNTER."
+  (declare (indent 1))
+  (let ((original (make-symbol "original")))
+    `(let ((,original (symbol-function 'elfeed-web-ng-make-webid)))
+       (cl-letf (((symbol-function 'elfeed-web-ng-make-webid)
+                  (lambda (thing)
+                    (cl-incf ,counter)
+                    (funcall ,original thing))))
+         ,@body))))
+
+(ert-deftest elfeed-web-ng-test-webid-is-valid ()
+  "Every webid the server makes passes its own validator."
+  (elfeed-web-ng-test--with-db
+    (dotimes (i 50)
+      (let ((entry (elfeed-web-ng-test--add-entry :id (number-to-string i))))
+        (should (elfeed-web-ng--valid-webid-p
+                 (elfeed-web-ng-make-webid entry)))))))
+
+(ert-deftest elfeed-web-ng-test-lookup-unseen-webid ()
+  "A webid the server has not computed since startup still resolves."
+  (elfeed-web-ng-test--with-db
+    (let* ((entry (elfeed-web-ng-test--add-entry))
+           (webid (elfeed-web-ng-make-webid entry))
+           (feed-webid (elfeed-web-ng-make-webid (elfeed-entry-feed entry))))
+      (clrhash elfeed-web-ng--webid-map)
+      (should (eq entry (elfeed-web-ng-lookup webid)))
+      (should (eq (elfeed-entry-feed entry)
+                  (elfeed-web-ng-lookup feed-webid))))))
+
+(ert-deftest elfeed-web-ng-test-lookup-miss-scans-once-per-revision ()
+  "Repeated misses rescan the database only after it changes."
+  (elfeed-web-ng-test--with-db
+    (elfeed-web-ng-test--add-entry :id "1")
+    (let ((calls 0))
+      (elfeed-web-ng-test--counting-webids calls
+        (should-not (elfeed-web-ng-lookup "aaaaaaaaaaaa"))
+        (should (< 0 calls))
+        (setq calls 0)
+        (should-not (elfeed-web-ng-lookup "aaaaaaaaaaaa"))
+        (should (= 0 calls))
+        ;; Adding an entry moves the database's :last-update stamp.
+        (let ((entry (elfeed-web-ng-test--add-entry :id "2")))
+          (should-not (elfeed-web-ng-lookup "aaaaaaaaaaaa"))
+          (should (< 0 calls))
+          (should (gethash (elfeed-web-ng-make-webid entry)
+                           elfeed-web-ng--webid-map)))))))
+
+(ert-deftest elfeed-web-ng-test-lookup-rejects-malformed-webid ()
+  "A malformed webid misses without scanning the database."
+  (elfeed-web-ng-test--with-db
+    (elfeed-web-ng-test--add-entry)
+    (let ((calls 0))
+      (elfeed-web-ng-test--counting-webids calls
+        (should-not (elfeed-web-ng-lookup "../etc"))
+        (should (= 0 calls))))))
+
 (provide 'elfeed-web-ng-test)
 ;;; elfeed-web-ng-test.el ends here
