@@ -203,6 +203,12 @@ such as slashes or \"..\" when it is concatenated into a filename."
        (let ((case-fold-search nil))
          (string-match-p "\\`[0-9a-f]\\{40\\}\\'" ref))))
 
+(defconst elfeed-web-ng--max-body-size 65536
+  "Largest request body, in bytes, that the API endpoints accept.
+The client only ever sends small JSON objects: tag changes and
+annotations.  simple-httpd itself reads a body of any length, so the
+bound is applied before the body is decoded or parsed.")
+
 (defconst elfeed-web-ng--loopback-hosts
   '("localhost" "127.0.0.1" "::1" "ip6-localhost")
   "Loopback names always accepted in the Host and Origin headers.")
@@ -279,8 +285,9 @@ MESSAGE, when non-nil, is the error payload in place of the numeric STATUS."
 (defmacro elfeed-web-ng--with (&rest body)
   "Execute BODY for a permitted, enabled request, else send an error.
 Rejects the request when its Host or Origin header falls outside
-`elfeed-web-ng-allowed-hosts', and sends 403 when the interface is
-disabled."
+`elfeed-web-ng-allowed-hosts', sends 403 when the interface is
+disabled, and 413 when the request body exceeds
+`elfeed-web-ng--max-body-size'."
   (declare (indent 0))
   `(cond
     ((not (elfeed-web-ng--host-allowed-p (elfeed-web-ng--header "Host")))
@@ -289,6 +296,9 @@ disabled."
      (elfeed-web-ng--reject "Origin" (elfeed-web-ng--header "Origin")))
     ((not elfeed-web-ng-enabled)
      (elfeed-web-ng--send-json-error 403))
+    ((> (length (cadr (assoc "Content" httpd-request)))
+        elfeed-web-ng--max-body-size)
+     (elfeed-web-ng--send-json-error 413))
     (t ,@body)))
 
 (defmacro elfeed-web-ng--with-method (method &rest body)
@@ -305,14 +315,22 @@ must be used inside a `defservlet*' body where that binding is in scope."
 
 (defun elfeed-web-ng--request-json ()
   "Return the request body parsed as a JSON object, or nil.
+The object is an alist with string keys: reading keys as symbols would
+intern every key a client sends, growing the obarray without bound.
 Nil stands for a missing body, invalid JSON, or a JSON value that is
 not a non-empty object.  Reads the free variable `httpd-request', so it
 must be called inside a `defservlet*' body."
   (when-let* ((content (cadr (assoc "Content" httpd-request)))
               (json (ignore-errors
-                      (json-read-from-string
-                       (decode-coding-string content 'utf-8)))))
+                      (let ((json-key-type 'string)
+                            (json-object-type 'alist))
+                        (json-read-from-string
+                         (decode-coding-string content 'utf-8))))))
     (and (consp json) json)))
+
+(defun elfeed-web-ng--json-field (json key)
+  "Return the value of KEY, a string, in the JSON object alist JSON."
+  (cdr (assoc key json)))
 
 (defservlet* elfeed/things/:webid application/json ()
   "Return a requested thing (entry or feed)."
@@ -394,9 +412,9 @@ The current set of tags for each entry will be returned."
   (elfeed-web-ng--with
     (elfeed-web-ng--with-method "PUT"
       (let* ((json (elfeed-web-ng--request-json))
-             (add (alist-get 'add json))
-             (remove (alist-get 'remove json))
-             (webids (alist-get 'entries json)))
+             (add (elfeed-web-ng--json-field json "add"))
+             (remove (elfeed-web-ng--json-field json "remove"))
+             (webids (elfeed-web-ng--json-field json "entries")))
         (if (not (and json
                       (elfeed-web-ng--valid-tags-p add)
                       (elfeed-web-ng--valid-tags-p remove)
@@ -456,12 +474,16 @@ and empty string for GET."
         (if (not (featurep 'elfeed-curate))
             (elfeed-web-ng--send-json-error 501 "elfeed-curate not available")
           (let* ((json-data (elfeed-web-ng--request-json))
-                 (annotation (alist-get 'annotation json-data)))
-            (if (null json-data)
-                (elfeed-web-ng--send-json-error 400 "invalid JSON")
+                 (annotation (elfeed-web-ng--json-field json-data "annotation")))
+            (cond
+             ((null json-data)
+              (elfeed-web-ng--send-json-error 400 "invalid JSON"))
+             ((not (or (null annotation) (stringp annotation)))
+              (elfeed-web-ng--send-json-error 400 "annotation must be a string"))
+             (t
               (elfeed-curate-set-entry-annotation entry (or annotation ""))
               (princ (json-encode (list :webid webid
-                                        :annotation (elfeed-curate-get-entry-annotation entry))))))))
+                                        :annotation (elfeed-curate-get-entry-annotation entry)))))))))
        (t
         (elfeed-web-ng--send-json-error 405 "method not allowed"))))))
 

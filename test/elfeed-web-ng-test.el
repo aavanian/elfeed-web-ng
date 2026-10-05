@@ -462,6 +462,76 @@ ARGS are those of `elfeed-web-ng-test--request'."
         (should (equal `((,(intern webid) . ["★"]))
                        (elfeed-web-ng-test--json response)))))))
 
+;;; Request bodies.
+
+(ert-deftest elfeed-web-ng-test-body-keys-not-interned ()
+  "Object keys in a request body never become symbols."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let* ((prefix (format "elfeed-web-ng-test-key-%d-" (random 1000000)))
+             (keys (cl-loop for i below 200 collect (format "%s%d" prefix i)))
+             (body (concat "{"
+                           (mapconcat (lambda (k) (format "%S: 1" k)) keys ", ")
+                           ", \"entries\": []}")))
+        (should (equal 200 (plist-get (elfeed-web-ng-test--put-tags body)
+                                      :status)))
+        (should-not (cl-some #'intern-soft keys))))))
+
+(ert-deftest elfeed-web-ng-test-body-size-limit ()
+  "A request body over the size limit is refused before it is parsed."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let ((padding (make-string elfeed-web-ng--max-body-size ?\s)))
+        (should (equal 413 (plist-get (elfeed-web-ng-test--put-tags
+                                       (concat "{\"entries\": []}" padding))
+                                      :status)))
+        (should (equal 200 (plist-get (elfeed-web-ng-test--put-tags
+                                       "{\"entries\": []}")
+                                      :status)))))))
+
+(defmacro elfeed-web-ng-test--with-curate (&rest body)
+  "Run BODY with a stand-in for elfeed-curate.
+Annotations live in the entry's meta, and setting a non-string signals,
+as the real package does."
+  (declare (indent 0))
+  ;; `featurep' ignores a let-binding of `features', so provide the
+  ;; feature for real and withdraw it afterwards.
+  `(let ((provided (featurep 'elfeed-curate)))
+     (unwind-protect
+         (cl-letf (((symbol-function 'elfeed-curate-get-entry-annotation)
+                    (lambda (entry) (or (elfeed-meta entry :test-annotation) "")))
+                   ((symbol-function 'elfeed-curate-set-entry-annotation)
+                    (lambda (entry annotation)
+                      (cl-check-type annotation string)
+                      (setf (elfeed-meta entry :test-annotation) annotation))))
+           (provide 'elfeed-curate)
+           ,@body)
+       (unless provided
+         (setq features (delq 'elfeed-curate features))))))
+
+(ert-deftest elfeed-web-ng-test-annotation-type ()
+  "Only a string or null is accepted as an annotation."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--with-curate
+        (let* ((entry (elfeed-web-ng-test--add-entry))
+               (uri (concat "/elfeed/annotation/" (elfeed-web-ng-make-webid entry))))
+          (dolist (body '("{\"annotation\": 5}"
+                          "{\"annotation\": [1]}"
+                          "{\"annotation\": {\"a\": 1}}"
+                          "{\"annotation\": true}"))
+            (should (equal (cons body 400)
+                           (cons body (elfeed-web-ng-test--status
+                                       "PUT" uri :body body)))))
+          ;; Nothing was stored by the rejected requests.
+          (should-not (elfeed-meta entry :test-annotation))
+          (should (equal 200 (elfeed-web-ng-test--status
+                              "PUT" uri :body "{\"annotation\": \"note\"}")))
+          (should (equal "note" (elfeed-meta entry :test-annotation)))
+          (should (equal 200 (elfeed-web-ng-test--status
+                              "PUT" uri :body "{\"annotation\": null}")))
+          (should (equal "" (elfeed-meta entry :test-annotation))))))))
+
 ;;; JSON shape served to the frontend.
 
 (defun elfeed-web-ng-test--round-trip (thing)
