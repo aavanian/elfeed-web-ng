@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import * as api from "../lib/api";
 import * as store from "../lib/store";
 import { formatDate } from "../lib/format";
@@ -90,11 +90,6 @@ export function EntryContent({ entry, onBack }) {
     };
   }, [ref]);
 
-  const handleEntryUpdated = useCallback((updatedEntry) => {
-    store.replaceEntry(updatedEntry);
-    store.selectedEntry.value = updatedEntry;
-  }, []);
-
   return (
     <article>
       <button class="back-button outline secondary" onClick={onBack}>
@@ -115,8 +110,8 @@ export function EntryContent({ entry, onBack }) {
       </div>
 
       <div class="entry-actions">
-        <TagActions entry={entry} onTagsChanged={handleEntryUpdated} />
-        <AnnotationEditor entry={entry} onAnnotationChanged={handleEntryUpdated} />
+        <TagActions entry={entry} onTagsChanged={store.replaceEntry} />
+        <AnnotationEditor entry={entry} onAnnotationChanged={store.replaceEntry} />
       </div>
 
       {!ref ? (
