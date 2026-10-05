@@ -388,10 +388,12 @@ must be called inside a `defservlet*' body."
           ;; The content is arbitrary feed HTML.  Served top-level (not just
           ;; inside the app's sandboxed iframe) it would otherwise run scripts
           ;; in this origin; the sandbox directive disables that, and
-          ;; 'unsafe-inline' keeps the inline <style> above working.
+          ;; 'unsafe-inline' keeps the inline <style> above working.  No
+          ;; Referer tells the hosts of its images where the reader lives.
           (httpd-send-header t "text/html" 200
                              :Content-Security-Policy
-                             "sandbox allow-popups; default-src 'self'; style-src 'unsafe-inline'"))
+                             "sandbox allow-popups; default-src 'self'; style-src 'unsafe-inline'"
+                             :Referrer-Policy "no-referrer"))
       (elfeed-web-ng--send-json-error 404))))
 
 (defun elfeed-web-ng--search-filter (query)
@@ -609,8 +611,11 @@ forever."
               (progn
                 (insert-file-contents
                  (expand-file-name "index.html" elfeed-web-ng--data-root))
+                ;; The reader's about:srcdoc frame inherits this page's
+                ;; referrer policy, so it covers feed images and embeds.
                 (httpd-send-header t "text/html" 200
-                                   :Cache-Control "no-cache, no-store, must-revalidate"))
+                                   :Cache-Control "no-cache, no-store, must-revalidate"
+                                   :Referrer-Policy "no-referrer"))
             (elfeed-web-ng--serve-static path request))))))))
 
 (defun httpd/favicon.ico (proc &rest _)

@@ -382,6 +382,22 @@ names stay in the Host allowlist."
         (should (string-match-p "<p>hello</p>" (plist-get response :body)))
         (should (string-match-p "\\`sandbox allow-popups;" csp))))))
 
+(ert-deftest elfeed-web-ng-test-no-referrer ()
+  "Pages that can load feed content forbid sending a Referer.
+The reader shows feed HTML in an about:srcdoc frame, which inherits the
+app page's referrer policy, so the app shell must carry it too."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let* ((entry (elfeed-web-ng-test--add-entry :content "<img src=x>"))
+             (ref (elfeed-ref-id (elfeed-entry-content entry))))
+        (dolist (uri (list "/elfeed/" "/elfeed/index.html"
+                           (concat "/elfeed/content/" ref)))
+          (let ((response (elfeed-web-ng-test--request "GET" uri)))
+            (should (equal (list uri 200 "no-referrer")
+                           (list uri (plist-get response :status)
+                                 (plist-get (plist-get response :headers)
+                                            :Referrer-Policy))))))))))
+
 (ert-deftest elfeed-web-ng-test-same-origin-request-passes ()
   "A same-origin state change passes the guards and takes effect."
   (elfeed-web-ng-test--with-server
