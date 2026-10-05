@@ -564,11 +564,14 @@ running so `feed-update-done' clients are notified."
 (defservlet* elfeed/feed-update-done application/json ()
   "Long-poll endpoint that responds when a feed update completes.
 If the update already finished before this request arrived, respond
-immediately rather than parking the process with nothing to drain it."
+immediately rather than parking the process with nothing to drain it.
+Otherwise park it and make sure a completion-poll chain is running: the
+update may have been started from Emacs rather than by `feed-update'."
   (elfeed-web-ng--with
     (if (zerop (elfeed-queue-count-total))
         (princ (json-encode '(:status "done")))
-      (push (httpd-discard-buffer) elfeed-web-ng--feed-done-waiting))))
+      (push (httpd-discard-buffer) elfeed-web-ng--feed-done-waiting)
+      (elfeed-web-ng--monitor-feed-update))))
 
 (defun elfeed-web-ng--serve-static (path request)
   "Serve PATH under `elfeed-web-ng--data-root' for REQUEST.

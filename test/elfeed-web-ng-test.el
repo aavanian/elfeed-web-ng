@@ -507,6 +507,101 @@ names stay in the Host allowlist."
         (should (equal `((,(intern webid) . ["★"]))
                        (elfeed-web-ng-test--json response)))))))
 
+;;; Feed updates.
+
+(defvar elfeed-web-ng-test--queue 0
+  "Length of the stand-in feed fetch queue.")
+
+(defvar elfeed-web-ng-test--scheduled nil
+  "Functions scheduled with `run-at-time', most recent first.")
+
+(defvar elfeed-web-ng-test--updates 0
+  "Number of times `elfeed-update' was called.")
+
+(defmacro elfeed-web-ng-test--with-fetch-queue (&rest body)
+  "Run BODY against a stand-in fetch queue and timer list.
+The queue length is `elfeed-web-ng-test--queue'; timers are recorded in
+`elfeed-web-ng-test--scheduled' instead of running, and `elfeed-update'
+calls are counted in `elfeed-web-ng-test--updates'."
+  (declare (indent 0))
+  `(let ((elfeed-web-ng-test--queue 0)
+         (elfeed-web-ng-test--scheduled nil)
+         (elfeed-web-ng-test--updates 0)
+         (elfeed-web-ng--feed-done-timer nil)
+         (elfeed-web-ng--feed-done-waiting nil))
+     (cl-letf (((symbol-function 'elfeed-queue-count-total)
+                (lambda () elfeed-web-ng-test--queue))
+               ((symbol-function 'elfeed-update)
+                (lambda () (cl-incf elfeed-web-ng-test--updates)))
+               ((symbol-function 'run-at-time)
+                (lambda (_time _repeat function &rest _args)
+                  (push function elfeed-web-ng-test--scheduled)
+                  (list 'test-timer function))))
+       ,@body)))
+
+(defun elfeed-web-ng-test--run-timers ()
+  "Run and clear the recorded timers, capturing any responses they send.
+Return the responses as a list of (STATUS . BODY)."
+  (let ((timers (reverse elfeed-web-ng-test--scheduled))
+        (responses nil))
+    (setq elfeed-web-ng-test--scheduled nil)
+    (cl-letf (((symbol-function 'httpd-send-header)
+               (lambda (_proc _mime status &rest _headers)
+                 (setq httpd--header-sent t)
+                 (push (cons status (buffer-string)) responses))))
+      (mapc #'funcall timers))
+    (nreverse responses)))
+
+(ert-deftest elfeed-web-ng-test-feed-update-poll-chain ()
+  "Repeated monitoring keeps a single poll timer running."
+  (elfeed-web-ng-test--with-fetch-queue
+    (setq elfeed-web-ng-test--queue 3)
+    (elfeed-web-ng--monitor-feed-update)
+    (elfeed-web-ng--monitor-feed-update)
+    (should (= 1 (length elfeed-web-ng-test--scheduled)))
+    ;; Each poll of a non-empty queue schedules exactly one more.
+    (elfeed-web-ng-test--run-timers)
+    (should (= 1 (length elfeed-web-ng-test--scheduled)))
+    (setq elfeed-web-ng-test--queue 0)
+    (elfeed-web-ng-test--run-timers)
+    (should-not elfeed-web-ng-test--scheduled)
+    (should-not elfeed-web-ng--feed-done-timer)))
+
+(ert-deftest elfeed-web-ng-test-feed-update-skips-fetch-in-flight ()
+  "A feed update starts a fetch only when none is in flight."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-fetch-queue
+      (setq elfeed-web-ng-test--queue 2)
+      (should (equal 200 (elfeed-web-ng-test--status "POST" "/elfeed/feed-update")))
+      (should (= 0 elfeed-web-ng-test--updates))
+      (setq elfeed-web-ng-test--queue 0)
+      (should (equal 200 (elfeed-web-ng-test--status "POST" "/elfeed/feed-update")))
+      (should (= 1 elfeed-web-ng-test--updates)))))
+
+(ert-deftest elfeed-web-ng-test-feed-update-done-when-idle ()
+  "With nothing being fetched, the long poll answers at once."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-fetch-queue
+      (let ((response (elfeed-web-ng-test--request
+                       "GET" "/elfeed/feed-update-done")))
+        (should (equal 200 (plist-get response :status)))
+        (should (equal '((status . "done"))
+                       (elfeed-web-ng-test--json response)))
+        (should-not elfeed-web-ng--feed-done-waiting)))))
+
+(ert-deftest elfeed-web-ng-test-feed-update-done-without-trigger ()
+  "A long poll parked during an update started from Emacs is answered.
+No /feed-update request ever starts the poll chain in this case."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-fetch-queue
+      (setq elfeed-web-ng-test--queue 4)
+      (should-not (elfeed-web-ng-test--request "GET" "/elfeed/feed-update-done"))
+      (should (= 1 (length elfeed-web-ng--feed-done-waiting)))
+      (setq elfeed-web-ng-test--queue 0)
+      (should (equal '((200 . "{\"status\":\"done\"}"))
+                     (elfeed-web-ng-test--run-timers)))
+      (should-not elfeed-web-ng--feed-done-waiting))))
+
 ;;; Search.
 
 (defun elfeed-web-ng-test--search (uri)
