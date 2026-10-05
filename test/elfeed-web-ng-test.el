@@ -406,5 +406,41 @@ ARGS are those of `elfeed-web-ng-test--request'."
         (should-not (elfeed-web-ng-lookup "../etc"))
         (should (= 0 calls))))))
 
+;;; JSON shape served to the frontend.
+
+(defun elfeed-web-ng-test--round-trip (thing)
+  "Encode THING the way the servlets do and parse it back as an alist."
+  (let ((json-array-type 'vector))
+    (json-read-from-string (json-encode (elfeed-web-ng-for-json thing)))))
+
+(ert-deftest elfeed-web-ng-test-entry-json-empty-lists ()
+  "Empty tags and enclosures encode as arrays, and missing content as null."
+  (elfeed-web-ng-test--with-db
+    (let ((json (elfeed-web-ng-test--round-trip
+                 (elfeed-web-ng-test--add-entry :tags nil))))
+      (should (equal [] (alist-get 'tags json)))
+      (should (equal [] (alist-get 'enclosures json)))
+      (should (assq 'content json))
+      (should-not (alist-get 'content json)))))
+
+(ert-deftest elfeed-web-ng-test-entry-json-shape ()
+  "An entry carries its fields, a millisecond date and its nested feed."
+  (elfeed-web-ng-test--with-db
+    (let* ((entry (elfeed-web-ng-test--add-entry
+                   :title "Hello" :date 1700000000 :tags (list 'unread 'later)
+                   :content "<p>body</p>"))
+           (json (elfeed-web-ng-test--round-trip entry))
+           (feed (alist-get 'feed json)))
+      (should (equal (elfeed-web-ng-make-webid entry) (alist-get 'webid json)))
+      (should (equal "Hello" (alist-get 'title json)))
+      (should (equal "https://example.com/1" (alist-get 'link json)))
+      (should (equal 1700000000000 (alist-get 'date json)))
+      (should (equal ["unread" "later"] (alist-get 'tags json)))
+      (should (equal (elfeed-ref-id (elfeed-entry-content entry))
+                     (alist-get 'content json)))
+      (should (elfeed-web-ng--valid-webid-p (alist-get 'webid feed)))
+      (should (equal "Example" (alist-get 'title feed)))
+      (should (equal "https://example.com/feed" (alist-get 'url feed))))))
+
 (provide 'elfeed-web-ng-test)
 ;;; elfeed-web-ng-test.el ends here
