@@ -7,8 +7,11 @@ import { formatDate } from "../lib/format";
 import { TagActions } from "./TagActions";
 import { AnnotationEditor } from "./AnnotationEditor";
 
+// The referrer policy keeps the hosts of feed images and embeds from
+// learning the reader's private address through the Referer header.
 const CONTENT_STYLE = `
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <style>
     body { background: #fdf6e3; color: #657b83; overflow-x: hidden; word-break: break-word; }
     a { color: #268bd2; }
