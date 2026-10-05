@@ -665,6 +665,26 @@ No /feed-update request ever starts the poll chain in this case."
   "Return the file `elfeed-web-ng' was loaded from, as source."
   (concat (file-name-sans-extension (locate-library "elfeed-web-ng")) ".el"))
 
+(ert-deftest elfeed-web-ng-test-version-in-sync ()
+  "The library header, the API and package.json report one version."
+  (require 'lisp-mnt)
+  (let* ((source (elfeed-web-ng-test--source-file))
+         (package-json (expand-file-name "package.json"
+                                         (file-name-directory source)))
+         (npm-version (with-temp-buffer
+                        (insert-file-contents package-json)
+                        (alist-get 'version (json-read)))))
+    (should (equal elfeed-web-ng--version (lm-version source)))
+    (should (equal elfeed-web-ng--version npm-version))))
+
+(ert-deftest elfeed-web-ng-test-library-header ()
+  "The library header names its maintainer and keywords."
+  (require 'lisp-mnt)
+  (let ((source (elfeed-web-ng-test--source-file)))
+    (should (lm-maintainers source))
+    (should (lm-authors source))
+    (should (member "news" (lm-keywords-list source)))))
+
 (ert-deftest elfeed-web-ng-test-commentary-lists-servlets ()
   "The Commentary lists every servlet path with its method."
   (require 'lisp-mnt)

@@ -6,9 +6,12 @@
 ;; Based on elfeed-web by Christopher Wellons <wellons@nullprogram.com>
 ;; Original: https://github.com/skeeto/elfeed (Unlicense)
 
+;; Author: Alexandre Avanian <git@alexandre.avanian.net>
+;; Maintainer: Alexandre Avanian <git@alexandre.avanian.net>
 ;; URL: https://github.com/aavanian/elfeed-web-ng
 ;; Version: 1.0.0
 ;; Package-Requires: ((simple-httpd "1.5.1") (elfeed "3.2.0") (emacs "29.2"))
+;; Keywords: comm, news
 
 ;;; Commentary:
 
