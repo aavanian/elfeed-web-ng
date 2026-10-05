@@ -263,6 +263,11 @@ that is nil, with `httpd-host' if it names a specific address."
   (and-let* ((name (elfeed-web-ng--hostname host)))
     (and (member name (elfeed-web-ng--effective-allowed-hosts)) t)))
 
+(defconst elfeed-web-ng--default-ports '(("http" . 80) ("https" . 443))
+  "Port implied by each scheme a browser sends in an Origin header.
+Looked up here rather than with `url-port', which loads the url-http
+library and its proxy setup on first use.")
+
 (defun elfeed-web-ng--origin-allowed-p (origin host)
   "Return non-nil if ORIGIN is absent or names the server at HOST.
 ORIGIN and HOST are the values of the request headers of those names.
@@ -279,11 +284,11 @@ works.  An opaque \"null\" origin is rejected."
                  (url (ignore-errors (url-generic-parse-url origin)))
                  (origin-name (elfeed-web-ng--hostname (url-host url)))
                  ((not (string-empty-p origin-name))))
-        (and (equal origin-name (elfeed-web-ng--hostname host))
-             (equal (url-port url)
-                    (or (elfeed-web-ng--host-port host)
-                        (url-scheme-get-property (url-type url)
-                                                 'default-port)))))))
+        (let ((default-port (cdr (assoc (url-type url)
+                                        elfeed-web-ng--default-ports))))
+          (and (equal origin-name (elfeed-web-ng--hostname host))
+               (equal (or (url-portspec url) default-port)
+                      (or (elfeed-web-ng--host-port host) default-port)))))))
 
 (defun elfeed-web-ng--reject (header value)
   "Send a generic 403 for a request rejected by the HEADER allowlist.
