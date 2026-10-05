@@ -6,7 +6,6 @@ export const entries = signal([]);
 export const selectedEntry = signal(null);
 export const query = signal('');
 export const savedSearches = signal([]);
-export const capabilities = signal(null);
 export const loading = signal(false);
 export const updating = signal(false);
 export const error = signal(null);

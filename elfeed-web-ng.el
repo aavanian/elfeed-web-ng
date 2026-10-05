@@ -472,18 +472,16 @@ The current set of tags for each entry will be returned."
                        finally (princ (if result (json-encode result) "{}"))))))))))
 
 (defservlet* elfeed/api application/json ()
-  "Return server capabilities for feature negotiation."
+  "Return the server version and its optional features.
+Only features that depend on the setup are listed; everything else the
+frontend uses is always available."
   (elfeed-web-ng--with
     (princ (json-encode
             (list :server "elfeed-web-ng"
                   :version elfeed-web-ng--version
-                  :features (vconcat
-                             (delq nil
-                                   (list "saved-searches"
-                                         "tags"
-                                         "feed-update-done"
-                                         (when (featurep 'elfeed-curate)
-                                           "annotations")))))))))
+                  :features (if (featurep 'elfeed-curate)
+                                ["annotations"]
+                              []))))))
 
 (defservlet* elfeed/saved-searches application/json ()
   "Return the configured saved searches."

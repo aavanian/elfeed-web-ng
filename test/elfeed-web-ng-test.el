@@ -648,6 +648,23 @@ No /feed-update request ever starts the poll chain in this case."
                      (elfeed-web-ng-test--run-timers)))
       (should-not elfeed-web-ng--feed-done-waiting))))
 
+;;; Server capabilities.
+
+(ert-deftest elfeed-web-ng-test-api-features ()
+  "Only features that depend on the setup are advertised."
+  (elfeed-web-ng-test--with-server
+    (let ((json-array-type 'list))
+      (should (equal nil (alist-get 'features
+                                    (elfeed-web-ng-test--json
+                                     (elfeed-web-ng-test--request
+                                      "GET" "/elfeed/api")))))
+      (elfeed-web-ng-test--with-curate
+        (should (equal '("annotations")
+                       (alist-get 'features
+                                  (elfeed-web-ng-test--json
+                                   (elfeed-web-ng-test--request
+                                    "GET" "/elfeed/api")))))))))
+
 ;;; Search.
 
 (defun elfeed-web-ng-test--search (uri)

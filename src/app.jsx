@@ -23,8 +23,7 @@ export function App() {
   useEffect(() => {
     (async () => {
       try {
-        const caps = await api.init();
-        store.capabilities.value = caps;
+        await api.init();
         const searches = await api.getSavedSearches();
         store.savedSearches.value = searches;
 

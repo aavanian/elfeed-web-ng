@@ -2,24 +2,21 @@
 
 const BASE = '/elfeed';
 
-let capabilities = null;
+// Optional features of this server, such as 'annotations'.
+let features = [];
 
+// Read the server's capabilities. Rejects when the backend cannot be reached
+// or refuses the request, which the app reports as a connection error.
 export async function init() {
-  try {
-    const res = await fetch(`${BASE}/api`);
-    if (res.ok) {
-      capabilities = await res.json();
-    } else {
-      capabilities = { server: 'legacy', features: [] };
-    }
-  } catch {
-    capabilities = { server: 'legacy', features: [] };
-  }
+  const res = await fetch(`${BASE}/api`);
+  if (!res.ok) throw new Error(`Capabilities request failed: ${res.status}`);
+  const capabilities = await res.json();
+  features = capabilities.features ?? [];
   return capabilities;
 }
 
 export function hasFeature(name) {
-  return capabilities?.features?.includes(name) ?? false;
+  return features.includes(name);
 }
 
 export async function search(query) {
@@ -53,7 +50,6 @@ export async function markAllRead() {
 }
 
 export async function getSavedSearches() {
-  if (!hasFeature('saved-searches')) return [];
   const res = await fetch(`${BASE}/saved-searches`);
   if (!res.ok) return [];
   return res.json();
