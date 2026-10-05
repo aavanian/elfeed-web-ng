@@ -365,13 +365,23 @@ must be called inside a `defservlet*' body."
                              "sandbox allow-popups; default-src 'self'; style-src 'unsafe-inline'"))
       (elfeed-web-ng--send-json-error 404))))
 
+(defun elfeed-web-ng--search-filter (query)
+  "Parse the search QUERY into a filter capped at `elfeed-web-ng-limit'.
+A nil QUERY, from a request without one, matches every entry.  The cap
+is applied after parsing because the filter syntax lets a \"#N\" in the
+query set the limit, and the last one wins: prepending the configured
+limit to the query would let the client override it."
+  (let* ((filter (elfeed-search-parse-filter (or query "")))
+         (limit (plist-get filter :limit)))
+    (plist-put filter :limit (min (or limit elfeed-web-ng-limit)
+                                  elfeed-web-ng-limit))))
+
 (defservlet* elfeed/search application/json (q)
   "Perform a search operation with Q and return the results."
   (elfeed-web-ng--with
-    (let* ((results ())
-           (modified-q (format "#%d %s" elfeed-web-ng-limit q))
-           (filter (elfeed-search-parse-filter modified-q))
-           (count 0))
+    (let ((results ())
+          (filter (elfeed-web-ng--search-filter q))
+          (count 0))
       (with-elfeed-db-visit (entry feed)
         (when (elfeed-search-filter filter entry feed count)
           (push entry results)

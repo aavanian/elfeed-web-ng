@@ -462,6 +462,40 @@ ARGS are those of `elfeed-web-ng-test--request'."
         (should (equal `((,(intern webid) . ["★"]))
                        (elfeed-web-ng-test--json response)))))))
 
+;;; Search.
+
+(defun elfeed-web-ng-test--search (uri)
+  "GET URI from the search endpoint and return the entry titles found."
+  (let ((response (elfeed-web-ng-test--request "GET" uri)))
+    (should (equal 200 (plist-get response :status)))
+    (mapcar (lambda (e) (alist-get 'title e))
+            (elfeed-web-ng-test--json response))))
+
+(ert-deftest elfeed-web-ng-test-search-query ()
+  "A missing or empty query matches everything; a filter narrows it."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--add-entry :id "1" :title "one" :date 1000)
+      (elfeed-web-ng-test--add-entry :id "2" :title "two" :date 2000 :tags nil)
+      (should (equal '("two" "one") (elfeed-web-ng-test--search "/elfeed/search")))
+      (should (equal '("two" "one") (elfeed-web-ng-test--search "/elfeed/search?q=")))
+      (should (equal '("one") (elfeed-web-ng-test--search
+                               "/elfeed/search?q=%2Bunread"))))))
+
+(ert-deftest elfeed-web-ng-test-search-limit ()
+  "No query can raise the number of results above `elfeed-web-ng-limit'."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (dotimes (i 5)
+        (elfeed-web-ng-test--add-entry :id (number-to-string i) :date (* 1000 (1+ i))))
+      (let ((elfeed-web-ng-limit 2))
+        (should (= 2 (length (elfeed-web-ng-test--search "/elfeed/search?q="))))
+        (should (= 2 (length (elfeed-web-ng-test--search
+                              "/elfeed/search?q=%23100000"))))
+        ;; A lower limit in the query is honoured.
+        (should (= 1 (length (elfeed-web-ng-test--search
+                              "/elfeed/search?q=%231"))))))))
+
 ;;; Request bodies.
 
 (ert-deftest elfeed-web-ng-test-body-keys-not-interned ()
