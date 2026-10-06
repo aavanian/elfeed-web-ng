@@ -377,14 +377,6 @@ header h1 {
   margin-bottom: 0.75rem;
 }
 
-.entry-actions .tag-actions {
-  margin-bottom: 0;
-}
-
-.entry-actions .annotation-toggle {
-  margin-top: 0;
-}
-
 /* When the editor is open it breaks to its own full-width line below the row. */
 .entry-actions .annotation-editor {
   flex-basis: 100%;
@@ -396,7 +388,6 @@ header h1 {
   display: flex;
   gap: 0.25rem;
   flex-wrap: wrap;
-  margin-bottom: 0.75rem;
 }
 
 .tag-actions button {
@@ -464,7 +455,6 @@ header h1 {
 .annotation-toggle {
   padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
-  margin-top: 0.5rem;
 }
 
 /* Annotation editor */
