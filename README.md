@@ -4,11 +4,17 @@ A modern web interface for [Elfeed](https://github.com/skeeto/elfeed), the Emacs
 
 ## Features
 
-- Mobile-friendly PWA (installable on iOS/Android)
-- Saved searches with quick-access buttons
-- Tag management (read/unread, star, later, custom tags)
+- Mobile-friendly PWA (installable on iOS/Android); the app itself still opens
+  offline, from its cache
+- Saved searches with quick-access buttons, and a free-form Elfeed filter
+- Read/unread, star (`★`) and "later" toggles on each entry; other tags are shown
+- Swipe an entry left in the list to toggle read/unread
+- "Update feeds" runs `elfeed-update` in Emacs and refreshes the list when it
+  finishes; "Mark all read" clears unread on every entry
 - Annotation support (requires [elfeed-curate](https://github.com/rnadler/elfeed-curate))
 - Responsive desktop/mobile layout
+- Build info panel, to check which build a device is running: long-press or
+  triple-tap the "Elfeed" title (right-click on desktop)
 
 ## Compatibility
 
@@ -181,7 +187,7 @@ Since the built files are under version control, most merge or rebase will lead 
 ## Ideas
 
 - **Keyboard navigation** — arrow keys to move between entries, enter to open, escape to go back
-- **Offline support** — cache app shell and pre-load entry content so the page works without network, syncing tag changes when back online
+- **Offline reading** — pre-load entry content so entries can be read without network, and queue tag changes until the server is back (the app shell is already cached)
 
 ## Credits
 
