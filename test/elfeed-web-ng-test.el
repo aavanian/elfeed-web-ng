@@ -2,10 +2,11 @@
 
 ;;; Commentary:
 
-;; ERT tests for the request-guarding helpers.  Run with:
+;; ERT tests for the elfeed-web-ng server.  `./check.sh' runs them; to
+;; run them alone, put elfeed and simple-httpd on the load path:
 ;;
-;;   emacs --batch -L <deps> -L . -l test/elfeed-web-ng-test.el \
-;;         -f ert-run-tests-batch-and-exit
+;;   emacs --batch -L "$ELFEED_DIR" -L "$HTTPD_DIR" -L . \
+;;         -l test/elfeed-web-ng-test.el -f ert-run-tests-batch-and-exit
 
 ;;; Code:
 
@@ -143,6 +144,303 @@ validator to the link's own mtime and never invalidate a client cache."
           (should (equal (file-truename target) served))
           (should-not (equal link served)))
       (delete-directory dir t))))
+
+;;; Request harness.
+
+(defmacro elfeed-web-ng-test--with-db (&rest body)
+  "Run BODY against a fresh, empty elfeed database in a temporary directory.
+The webid map and index stamp are reset too, so webids computed in one
+test cannot resolve in another."
+  (declare (indent 0))
+  `(let* ((elfeed-db nil)
+          (elfeed-db-feeds nil)
+          (elfeed-db-entries nil)
+          (elfeed-db-index nil)
+          (elfeed-db-directory (make-temp-file "elfeed-web-ng-db" t))
+          (elfeed-new-entry-hook nil)
+          (elfeed-db-update-hook nil)
+          (elfeed-web-ng--webid-map (make-hash-table :test 'equal))
+          (elfeed-web-ng--webid-index-stamp nil))
+     (unwind-protect
+         (progn ,@body)
+       (delete-directory elfeed-db-directory t))))
+
+(cl-defun elfeed-web-ng-test--add-entry
+    (&key (id "1") (title "Title") (tags (list 'unread)) (date 1000) content)
+  "Add an entry with ID, TITLE, TAGS, DATE and CONTENT to the database.
+All entries belong to one feed.  Return the stored entry."
+  (let* ((feed (elfeed-db-get-feed "https://example.com/feed"))
+         (entry (elfeed-entry--create
+                 :id (cons "example.com" id)
+                 :title title
+                 :link (concat "https://example.com/" id)
+                 :date date
+                 :tags tags
+                 :feed-id (elfeed-feed-id feed)
+                 :content (and content (elfeed-ref content)))))
+    (setf (elfeed-feed-url feed) "https://example.com/feed"
+          (elfeed-feed-title feed) "Example")
+    (elfeed-db-add (list entry))
+    (elfeed-db-get-entry (elfeed-entry-id entry))))
+
+(defmacro elfeed-web-ng-test--with-server (&rest body)
+  "Run BODY with the interface enabled and bound to 127.0.0.1."
+  (declare (indent 0))
+  `(let ((elfeed-web-ng-enabled t)
+         (elfeed-web-ng-allowed-hosts nil)
+         (httpd-host "127.0.0.1")
+         (httpd-log-buffer nil))
+     ,@body))
+
+(cl-defun elfeed-web-ng-test--request
+    (method uri &key (host "127.0.0.1:8082") origin body)
+  "Dispatch a METHOD request for URI to its servlet, as simple-httpd does.
+HOST and ORIGIN are the request headers of those names; nil omits them.
+BODY is the request content.  Return the response as a plist with
+:status, :mime, :headers (a keyword plist) and :body.  An error escaping
+the servlet is reported as status 500, which is what the server sends."
+  (let* ((request `((,method ,uri "HTTP/1.1")
+                    ,@(and host `(("Host" ,host)))
+                    ,@(and origin `(("Origin" ,origin)))
+                    ,@(and body `(("Content" ,(encode-coding-string body 'utf-8))))))
+         (parsed (httpd-parse-uri uri))
+         (servlet (httpd-get-servlet (car parsed)))
+         (response nil))
+    (cl-letf (((symbol-function 'httpd-send-header)
+               (lambda (_proc mime status &rest headers)
+                 (setq httpd--header-sent t
+                       response (list :status status :mime mime
+                                      :headers headers
+                                      :body (buffer-string))))))
+      (condition-case nil
+          (funcall servlet 'elfeed-web-ng-test-proc
+                   (car parsed) (cadr parsed) request)
+        (error (setq response (list :status 500)))))
+    response))
+
+(defun elfeed-web-ng-test--status (&rest args)
+  "Return the status of the request that ARGS describe.
+ARGS are those of `elfeed-web-ng-test--request'."
+  (plist-get (apply #'elfeed-web-ng-test--request args) :status))
+
+(defun elfeed-web-ng-test--json (response)
+  "Parse the body of RESPONSE as JSON, with objects as alists."
+  (json-read-from-string (plist-get response :body)))
+
+(defconst elfeed-web-ng-test--guarded-requests
+  '(("GET" "/elfeed/")
+    ("GET" "/elfeed/index.html")
+    ("GET" "/elfeed/manifest.json")
+    ("GET" "/elfeed/api")
+    ("GET" "/elfeed/search?q=")
+    ("GET" "/elfeed/things/aaaaaaaaaaaa")
+    ("GET" "/elfeed/content/da39a3ee5e6b4b0d3255bfef95601890afd80709")
+    ("GET" "/elfeed/saved-searches")
+    ("GET" "/elfeed/feed-update-done")
+    ("PUT" "/elfeed/tags")
+    ("PUT" "/elfeed/annotation/aaaaaaaaaaaa")
+    ("POST" "/elfeed/mark-all-read")
+    ("POST" "/elfeed/feed-update"))
+  "One request for every guarded servlet, static files included.")
+
+(defconst elfeed-web-ng-test--state-changing-requests
+  '(("PUT" "/elfeed/tags")
+    ("PUT" "/elfeed/annotation/aaaaaaaaaaaa")
+    ("POST" "/elfeed/mark-all-read")
+    ("POST" "/elfeed/feed-update"))
+  "One request for every servlet that changes state.")
+
+(defmacro elfeed-web-ng-test--with-feed-update-stubs (&rest body)
+  "Run BODY with feed fetching stubbed out and an empty fetch queue."
+  (declare (indent 0))
+  `(cl-letf (((symbol-function 'elfeed-update) #'ignore)
+             ((symbol-function 'elfeed-queue-count-total) (lambda () 0)))
+     ,@body))
+
+;;; Request guards.
+
+(ert-deftest elfeed-web-ng-test-guard-host ()
+  "Every servlet rejects a Host outside the allowlist."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--with-feed-update-stubs
+        (dolist (req elfeed-web-ng-test--guarded-requests)
+          (let ((response (elfeed-web-ng-test--request
+                           (car req) (cadr req) :host "evil.example.com")))
+            (should (equal (list req 403)
+                           (list req (plist-get response :status))))
+            (should (string-prefix-p "403 Forbidden"
+                                     (plist-get response :body)))))))))
+
+(ert-deftest elfeed-web-ng-test-guard-missing-host ()
+  "Every servlet rejects a request with no Host header."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--with-feed-update-stubs
+        (dolist (req elfeed-web-ng-test--guarded-requests)
+          (should (equal (list req 403)
+                         (list req (elfeed-web-ng-test--status
+                                    (car req) (cadr req) :host nil)))))))))
+
+(ert-deftest elfeed-web-ng-test-guard-origin ()
+  "Every state-changing servlet rejects a cross-site or opaque Origin."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--with-feed-update-stubs
+        (dolist (req elfeed-web-ng-test--state-changing-requests)
+          (dolist (origin '("http://evil.example.com" "null"))
+            (should (equal (list req origin 403)
+                           (list req origin
+                                 (elfeed-web-ng-test--status
+                                  (car req) (cadr req)
+                                  :origin origin :body "{}"))))))))))
+
+(ert-deftest elfeed-web-ng-test-guard-disabled ()
+  "A disabled interface serves no API and no app."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--with-feed-update-stubs
+        (let ((elfeed-web-ng-enabled nil))
+          (dolist (req elfeed-web-ng-test--guarded-requests)
+            (let ((response (elfeed-web-ng-test--request (car req) (cadr req))))
+              (if (eq 'httpd/elfeed
+                      (httpd-get-servlet (car (httpd-parse-uri (cadr req)))))
+                  ;; Static files answer with an explanation instead.
+                  (should (equal (list req t)
+                                 (list req (and (string-match-p
+                                                 "disabled"
+                                                 (plist-get response :body))
+                                                t))))
+                (should (equal (list req 403)
+                               (list req (plist-get response :status))))))))))))
+
+(ert-deftest elfeed-web-ng-test-guard-method ()
+  "State-changing POST endpoints refuse GET."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--with-feed-update-stubs
+        (dolist (uri '("/elfeed/mark-all-read" "/elfeed/feed-update"))
+          (should (equal (list uri 405)
+                         (list uri (elfeed-web-ng-test--status "GET" uri)))))))))
+
+(ert-deftest elfeed-web-ng-test-content-csp ()
+  "Entry content is served with a CSP that sandboxes it."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let* ((entry (elfeed-web-ng-test--add-entry :content "<p>hello</p>"))
+             (ref (elfeed-ref-id (elfeed-entry-content entry)))
+             (response (elfeed-web-ng-test--request
+                        "GET" (concat "/elfeed/content/" ref)))
+             (csp (plist-get (plist-get response :headers)
+                             :Content-Security-Policy)))
+        (should (equal 200 (plist-get response :status)))
+        (should (string-match-p "<p>hello</p>" (plist-get response :body)))
+        (should (string-match-p "\\`sandbox allow-popups;" csp))))))
+
+(ert-deftest elfeed-web-ng-test-same-origin-request-passes ()
+  "A same-origin state change passes the guards and takes effect."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let ((entry (elfeed-web-ng-test--add-entry)))
+        (should (equal 200 (elfeed-web-ng-test--status
+                            "POST" "/elfeed/mark-all-read"
+                            :origin "http://127.0.0.1:8082")))
+        (should-not (memq 'unread (elfeed-entry-tags entry)))))))
+
+;;; Webid generation and lookup.
+
+(defmacro elfeed-web-ng-test--counting-webids (counter &rest body)
+  "Run BODY, counting calls to `elfeed-web-ng-make-webid' in COUNTER."
+  (declare (indent 1))
+  (let ((original (make-symbol "original")))
+    `(let ((,original (symbol-function 'elfeed-web-ng-make-webid)))
+       (cl-letf (((symbol-function 'elfeed-web-ng-make-webid)
+                  (lambda (thing)
+                    (cl-incf ,counter)
+                    (funcall ,original thing))))
+         ,@body))))
+
+(ert-deftest elfeed-web-ng-test-webid-is-valid ()
+  "Every webid the server makes passes its own validator."
+  (elfeed-web-ng-test--with-db
+    (dotimes (i 50)
+      (let ((entry (elfeed-web-ng-test--add-entry :id (number-to-string i))))
+        (should (elfeed-web-ng--valid-webid-p
+                 (elfeed-web-ng-make-webid entry)))))))
+
+(ert-deftest elfeed-web-ng-test-lookup-unseen-webid ()
+  "A webid the server has not computed since startup still resolves."
+  (elfeed-web-ng-test--with-db
+    (let* ((entry (elfeed-web-ng-test--add-entry))
+           (webid (elfeed-web-ng-make-webid entry))
+           (feed-webid (elfeed-web-ng-make-webid (elfeed-entry-feed entry))))
+      (clrhash elfeed-web-ng--webid-map)
+      (should (eq entry (elfeed-web-ng-lookup webid)))
+      (should (eq (elfeed-entry-feed entry)
+                  (elfeed-web-ng-lookup feed-webid))))))
+
+(ert-deftest elfeed-web-ng-test-lookup-miss-scans-once-per-revision ()
+  "Repeated misses rescan the database only after it changes."
+  (elfeed-web-ng-test--with-db
+    (elfeed-web-ng-test--add-entry :id "1")
+    (let ((calls 0))
+      (elfeed-web-ng-test--counting-webids calls
+        (should-not (elfeed-web-ng-lookup "aaaaaaaaaaaa"))
+        (should (< 0 calls))
+        (setq calls 0)
+        (should-not (elfeed-web-ng-lookup "aaaaaaaaaaaa"))
+        (should (= 0 calls))
+        ;; Adding an entry moves the database's :last-update stamp.
+        (let ((entry (elfeed-web-ng-test--add-entry :id "2")))
+          (should-not (elfeed-web-ng-lookup "aaaaaaaaaaaa"))
+          (should (< 0 calls))
+          (should (gethash (elfeed-web-ng-make-webid entry)
+                           elfeed-web-ng--webid-map)))))))
+
+(ert-deftest elfeed-web-ng-test-lookup-rejects-malformed-webid ()
+  "A malformed webid misses without scanning the database."
+  (elfeed-web-ng-test--with-db
+    (elfeed-web-ng-test--add-entry)
+    (let ((calls 0))
+      (elfeed-web-ng-test--counting-webids calls
+        (should-not (elfeed-web-ng-lookup "../etc"))
+        (should (= 0 calls))))))
+
+;;; JSON shape served to the frontend.
+
+(defun elfeed-web-ng-test--round-trip (thing)
+  "Encode THING the way the servlets do and parse it back as an alist."
+  (let ((json-array-type 'vector))
+    (json-read-from-string (json-encode (elfeed-web-ng-for-json thing)))))
+
+(ert-deftest elfeed-web-ng-test-entry-json-empty-lists ()
+  "Empty tags and enclosures encode as arrays, and missing content as null."
+  (elfeed-web-ng-test--with-db
+    (let ((json (elfeed-web-ng-test--round-trip
+                 (elfeed-web-ng-test--add-entry :tags nil))))
+      (should (equal [] (alist-get 'tags json)))
+      (should (equal [] (alist-get 'enclosures json)))
+      (should (assq 'content json))
+      (should-not (alist-get 'content json)))))
+
+(ert-deftest elfeed-web-ng-test-entry-json-shape ()
+  "An entry carries its fields, a millisecond date and its nested feed."
+  (elfeed-web-ng-test--with-db
+    (let* ((entry (elfeed-web-ng-test--add-entry
+                   :title "Hello" :date 1700000000 :tags (list 'unread 'later)
+                   :content "<p>body</p>"))
+           (json (elfeed-web-ng-test--round-trip entry))
+           (feed (alist-get 'feed json)))
+      (should (equal (elfeed-web-ng-make-webid entry) (alist-get 'webid json)))
+      (should (equal "Hello" (alist-get 'title json)))
+      (should (equal "https://example.com/1" (alist-get 'link json)))
+      (should (equal 1700000000000 (alist-get 'date json)))
+      (should (equal ["unread" "later"] (alist-get 'tags json)))
+      (should (equal (elfeed-ref-id (elfeed-entry-content entry))
+                     (alist-get 'content json)))
+      (should (elfeed-web-ng--valid-webid-p (alist-get 'webid feed)))
+      (should (equal "Example" (alist-get 'title feed)))
+      (should (equal "https://example.com/feed" (alist-get 'url feed))))))
 
 (provide 'elfeed-web-ng-test)
 ;;; elfeed-web-ng-test.el ends here

@@ -4,7 +4,15 @@ import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import preact from '@preact/preset-vite';
 
-const buildId = Date.now().toString(36);
+// check.sh rebuilds with the stamps of the committed bundle, passed as JSON
+// in ELFEED_BUILD_STAMPS, so that unchanged sources reproduce web/ byte for
+// byte: the minifier picks identifier names from the whole output, stamps
+// included, so they cannot be masked after the fact.
+const stamps = process.env.ELFEED_BUILD_STAMPS
+  ? JSON.parse(process.env.ELFEED_BUILD_STAMPS)
+  : null;
+
+const buildId = stamps?.buildId ?? Date.now().toString(36);
 
 // Describe the checkout the bundle was built from. Failures are expected (a
 // tarball install has no git), and the placeholder keeps the readout honest.
@@ -55,7 +63,7 @@ export default defineConfig({
   root: 'src',
   base: '/elfeed/',
   define: {
-    __BUILD_INFO__: JSON.stringify({
+    __BUILD_INFO__: JSON.stringify(stamps ?? {
       ...gitInfo(),
       buildId,
       date: new Date().toISOString(),

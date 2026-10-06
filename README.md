@@ -113,6 +113,27 @@ pnpm run dev    # Vite dev server with HMR, proxying to Emacs backend
 pnpm run build  # Production build to web/
 ```
 
+### Tests
+
+`./check.sh` runs every automated check and exits non-zero on the first
+failure: shellcheck, byte-compilation, the ERT suite, the frontend tests, and a
+rebuild of the frontend that must match the committed `web/`. It needs
+`pnpm install` to have run, and the elisp dependencies, elfeed and simple-httpd. By default it
+takes them from the straight.el build directory next to this checkout
+(`../../build-<emacs-version>/`). Point it elsewhere with:
+
+```sh
+ELFEED_DIR=/path/to/elfeed HTTPD_DIR=/path/to/simple-httpd ./check.sh
+```
+
+To run only the frontend tests (Node's built-in test runner), use `pnpm test`.
+To run only the ERT suite:
+
+```sh
+emacs --batch -L "$ELFEED_DIR" -L "$HTTPD_DIR" -L . \
+      -l test/elfeed-web-ng-test.el -f ert-run-tests-batch-and-exit
+```
+
 ### Merging / Rebasing
 
 Since the built files are under version control, most merge or rebase will lead to conflict on those. The `.gitattributes` file is set to ignore the conflict and take the newer files in any case. They will be stale and will need a rebuild which should then be committed (ideally squashing that build commit with the merge commit if any or one of the merged/rebased commits. You will need something like `git config --global merge.ours.driver true` in your config for the `.gitattributes` config to work.
