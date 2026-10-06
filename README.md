@@ -151,7 +151,8 @@ proxy).
 
 The frontend is built with Preact + Vite. Pre-built files are in `web/` so users never need Node.js.
 
-To develop the frontend:
+To develop the frontend you need [pnpm](https://pnpm.io) 12 or later; `package.json`
+declares this, and pnpm and npm refuse to install with anything else:
 
 ```sh
 pnpm install
