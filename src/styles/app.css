@@ -178,10 +178,10 @@ header h1 {
 
 /* Mobile: show list or content, not both */
 @media (max-width: 767px) {
-  .app-layout.has-selection .list-pane {
+  main.reading .list-pane {
     display: none;
   }
-  .app-layout:not(.has-selection) .content-pane {
+  main:not(.reading) .content-pane {
     display: none;
   }
   /* No list to refresh while reading an entry. */
@@ -422,13 +422,13 @@ header h1 {
    space freed at the bottom for content. The chain is locked to the viewport so
    the only scroller is the iframe, not the outer (list) container. */
 @media (max-width: 767px) {
-  html.reading,
-  html.reading body,
-  html.reading #app {
+  html.reading-locked,
+  html.reading-locked body,
+  html.reading-locked #app {
     height: 100%;
     overflow: hidden;
   }
-  html.reading body {
+  html.reading-locked body {
     height: 100dvh;
   }
   main.reading {

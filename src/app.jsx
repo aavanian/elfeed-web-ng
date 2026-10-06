@@ -103,7 +103,7 @@ export function App() {
     const mq = window.matchMedia('(max-width: 767px)');
     const update = () => {
       const lock = !!store.selectedEntry.value && mq.matches;
-      document.documentElement.classList.toggle('reading', lock);
+      document.documentElement.classList.toggle('reading-locked', lock);
     };
     update();
     mq.addEventListener('change', update);
@@ -111,7 +111,7 @@ export function App() {
     return () => {
       mq.removeEventListener('change', update);
       unsub();
-      document.documentElement.classList.remove('reading');
+      document.documentElement.classList.remove('reading-locked');
     };
   }, []);
 
@@ -214,7 +214,7 @@ export function App() {
         </button>
       </header>
 
-      <div class={`app-layout ${selected ? 'has-selection' : ''}`}>
+      <div class="app-layout">
         <div class="list-pane">
           <SavedSearches onSearch={onSearch} />
           <SearchBar onSearch={onSearch} />
