@@ -159,6 +159,17 @@ pnpm run dev    # Vite dev server with HMR, proxying to Emacs backend
 pnpm run build  # Production build to web/
 ```
 
+The dev server forwards API calls to `http://localhost:8082`. If Emacs listens
+elsewhere, for example on a tailnet address, point it there:
+
+```sh
+ELFEED_BACKEND=http://100.64.0.1:8082 pnpm run dev
+```
+
+The proxy addresses Emacs by that URL, rewriting the `Host` and `Origin` headers
+to match, so the requests pass the allowlist and the same-origin check without
+extra configuration in Emacs.
+
 ### Tests
 
 `./check.sh` runs every automated check and exits non-zero on the first
