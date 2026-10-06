@@ -13,7 +13,7 @@ A modern web interface for [Elfeed](https://github.com/skeeto/elfeed), the Emacs
 ## Compatibility
 
 This interface requires the `elfeed-web-ng` Emacs backend; it is **no longer a
-drop-in replacement for the upstream [elfeed-web](https://github.com/skeeto/elfeed)
+drop-in replacement for the upstream [elfeed-web](https://github.com/emacs-elfeed/elfeed-web)
 server**. The "Update feeds" button drives an `elfeed-web-ng`-only feed-update
 endpoint that triggers `elfeed-update` server-side, which upstream elfeed-web
 does not provide.
@@ -176,7 +176,7 @@ Since the built files are under version control, most merge or rebase will lead 
 
 ## Credits
 
-This project is a fork of the `web` sub-package from [elfeed-web](https://github.com/skeeto/elfeed) by Christopher Wellons, originally released under the [Unlicense](https://unlicense.org/) (public domain). The original frontend files are preserved in the `legacy/` directory for reference.
+This project is a fork of the `web` sub-package of [Elfeed](https://github.com/skeeto/elfeed) by Christopher Wellons, now maintained separately as [elfeed-web](https://github.com/emacs-elfeed/elfeed-web), originally released under the [Unlicense](https://unlicense.org/) (public domain). The original frontend is kept in this repository at the [`legacy-compat`](https://github.com/aavanian/elfeed-web-ng/tree/legacy-compat/legacy) tag.
 
 ## License
 
