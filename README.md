@@ -209,6 +209,15 @@ git config --global merge.ours.driver true
 
 Without it, the conflicts under `web/` are left for you as usual.
 
+## Further reading
+
+- [docs/DISCOVERIES.md](docs/DISCOVERIES.md): lessons learned and non-obvious
+  gotchas, for anyone working on the code
+- [docs/review/](docs/review/): full repository reviews, each with a
+  `RESOLUTION.md` recording how every finding was resolved
+- [docs/history/](docs/history/): dated records that describe past states of
+  the code
+
 ## Ideas
 
 - **Keyboard navigation** — arrow keys to move between entries, enter to open, escape to go back
