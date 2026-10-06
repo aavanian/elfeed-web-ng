@@ -82,7 +82,11 @@
   }
 }
 
-/* Solarized Dark (explicit) */
+/* Solarized Dark (explicit). Nothing sets data-theme yet: this block is kept
+   for a light/dark toggle, which would set it on <html>. It must stay
+   identical to the automatic block above. A single declaration with CSS
+   light-dark() would avoid the copy, but browsers without it (Safari before
+   17.5) would then lose every colour, not just the dark ones. */
 [data-theme=dark] {
   --pico-background-color: #002b36;
   --pico-color: #839496;
@@ -178,10 +182,10 @@ header h1 {
 
 /* Mobile: show list or content, not both */
 @media (max-width: 767px) {
-  .app-layout.has-selection .list-pane {
+  main.reading .list-pane {
     display: none;
   }
-  .app-layout:not(.has-selection) .content-pane {
+  main:not(.reading) .content-pane {
     display: none;
   }
   /* No list to refresh while reading an entry. */
@@ -377,14 +381,6 @@ header h1 {
   margin-bottom: 0.75rem;
 }
 
-.entry-actions .tag-actions {
-  margin-bottom: 0;
-}
-
-.entry-actions .annotation-toggle {
-  margin-top: 0;
-}
-
 /* When the editor is open it breaks to its own full-width line below the row. */
 .entry-actions .annotation-editor {
   flex-basis: 100%;
@@ -396,7 +392,6 @@ header h1 {
   display: flex;
   gap: 0.25rem;
   flex-wrap: wrap;
-  margin-bottom: 0.75rem;
 }
 
 .tag-actions button {
@@ -422,13 +417,13 @@ header h1 {
    space freed at the bottom for content. The chain is locked to the viewport so
    the only scroller is the iframe, not the outer (list) container. */
 @media (max-width: 767px) {
-  html.reading,
-  html.reading body,
-  html.reading #app {
+  html.reading-locked,
+  html.reading-locked body,
+  html.reading-locked #app {
     height: 100%;
     overflow: hidden;
   }
-  html.reading body {
+  html.reading-locked body {
     height: 100dvh;
   }
   main.reading {
@@ -464,7 +459,6 @@ header h1 {
 .annotation-toggle {
   padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
-  margin-top: 0.5rem;
 }
 
 /* Annotation editor */
