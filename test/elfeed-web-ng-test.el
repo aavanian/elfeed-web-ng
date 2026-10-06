@@ -23,6 +23,14 @@
   (should (equal "[::1]" (elfeed-web-ng--strip-port "[::1]:8080")))
   (should (equal "[::1]" (elfeed-web-ng--strip-port "[::1]"))))
 
+(ert-deftest elfeed-web-ng-test-hostname ()
+  "Hostnames compare without port, case or IPv6 brackets."
+  (should (null (elfeed-web-ng--hostname nil)))
+  (should (equal "feeds.example.net" (elfeed-web-ng--hostname "Feeds.Example.Net:80")))
+  (should (equal "::1" (elfeed-web-ng--hostname "[::1]:8080")))
+  (should (equal "::1" (elfeed-web-ng--hostname "[::1]")))
+  (should (equal "::1" (elfeed-web-ng--hostname "::1"))))
+
 ;;; Effective allowlist.
 
 (ert-deftest elfeed-web-ng-test-effective-hosts-explicit ()
@@ -61,6 +69,7 @@
     (should (elfeed-web-ng--host-allowed-p "Feeds.Example.Net"))
     ;; Loopback is always allowed.
     (should (elfeed-web-ng--host-allowed-p "localhost:8080"))
+    (should (elfeed-web-ng--host-allowed-p "[::1]:8080"))
     ;; A rebound origin keeps its own Host header.
     (should-not (elfeed-web-ng--host-allowed-p "evil.example.com"))
     (should-not (elfeed-web-ng--host-allowed-p nil))))
@@ -68,17 +77,32 @@
 ;;; Origin check.
 
 (ert-deftest elfeed-web-ng-test-origin-allowed ()
-  (let ((elfeed-web-ng-allowed-hosts '("feeds.example.net"))
-        (httpd-host nil))
-    ;; A missing Origin defers to the Host check.
-    (should (elfeed-web-ng--origin-allowed-p nil))
-    ;; Same-site origins pass, port and scheme notwithstanding.
-    (should (elfeed-web-ng--origin-allowed-p "http://feeds.example.net:8080"))
-    (should (elfeed-web-ng--origin-allowed-p "https://feeds.example.net"))
-    (should (elfeed-web-ng--origin-allowed-p "http://localhost:8080"))
-    ;; Cross-site and opaque origins are rejected.
-    (should-not (elfeed-web-ng--origin-allowed-p "http://evil.example.com"))
-    (should-not (elfeed-web-ng--origin-allowed-p "null"))))
+  "An Origin must name the host and port the request was addressed to."
+  ;; A missing Origin defers to the Host check.
+  (should (elfeed-web-ng--origin-allowed-p nil "feeds.example.net"))
+  ;; Same origin, with the port explicit or implied by the scheme.
+  (should (elfeed-web-ng--origin-allowed-p "http://feeds.example.net:8080"
+                                           "feeds.example.net:8080"))
+  (should (elfeed-web-ng--origin-allowed-p "http://Feeds.Example.Net:8080"
+                                           "feeds.example.net:8080"))
+  (should (elfeed-web-ng--origin-allowed-p "https://feeds.example.net"
+                                           "feeds.example.net"))
+  (should (elfeed-web-ng--origin-allowed-p "http://feeds.example.net"
+                                           "feeds.example.net:80"))
+  (should (elfeed-web-ng--origin-allowed-p "http://[::1]:8082" "[::1]:8082"))
+  ;; Another service on the same machine is another origin.
+  (should-not (elfeed-web-ng--origin-allowed-p "http://localhost:3000"
+                                               "localhost:8082"))
+  (should-not (elfeed-web-ng--origin-allowed-p "http://localhost:3000"
+                                               "127.0.0.1:8082"))
+  (should-not (elfeed-web-ng--origin-allowed-p "http://feeds.example.net"
+                                               "feeds.example.net:8080"))
+  ;; Cross-site, opaque and malformed origins are rejected.
+  (should-not (elfeed-web-ng--origin-allowed-p "http://evil.example.com:8080"
+                                               "feeds.example.net:8080"))
+  (should-not (elfeed-web-ng--origin-allowed-p "null" "feeds.example.net"))
+  (should-not (elfeed-web-ng--origin-allowed-p "garbage" "feeds.example.net"))
+  (should-not (elfeed-web-ng--origin-allowed-p "http://feeds.example.net" nil)))
 
 ;;; Content ref validation.
 
@@ -295,6 +319,27 @@ ARGS are those of `elfeed-web-ng-test--request'."
                                   (car req) (cadr req)
                                   :origin origin :body "{}"))))))))))
 
+(ert-deftest elfeed-web-ng-test-guard-local-cross-origin ()
+  "Another web service on the same machine cannot drive the API.
+Covers both a loopback bind and a tailnet bind, where the loopback
+names stay in the Host allowlist."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--with-feed-update-stubs
+        (dolist (bind '("127.0.0.1" "100.64.0.1"))
+          (let ((httpd-host bind)
+                (host (concat bind ":8082")))
+            (dolist (req elfeed-web-ng-test--state-changing-requests)
+              (should (equal (list bind req 403)
+                             (list bind req
+                                   (elfeed-web-ng-test--status
+                                    (car req) (cadr req) :host host
+                                    :origin "http://localhost:3000"
+                                    :body "{}")))))
+            (should (equal 200 (elfeed-web-ng-test--status
+                                "POST" "/elfeed/mark-all-read" :host host
+                                :origin (concat "http://" host))))))))))
+
 (ert-deftest elfeed-web-ng-test-guard-disabled ()
   "A disabled interface serves no API and no app."
   (elfeed-web-ng-test--with-server
@@ -336,6 +381,22 @@ ARGS are those of `elfeed-web-ng-test--request'."
         (should (equal 200 (plist-get response :status)))
         (should (string-match-p "<p>hello</p>" (plist-get response :body)))
         (should (string-match-p "\\`sandbox allow-popups;" csp))))))
+
+(ert-deftest elfeed-web-ng-test-no-referrer ()
+  "Pages that can load feed content forbid sending a Referer.
+The reader shows feed HTML in an about:srcdoc frame, which inherits the
+app page's referrer policy, so the app shell must carry it too."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let* ((entry (elfeed-web-ng-test--add-entry :content "<img src=x>"))
+             (ref (elfeed-ref-id (elfeed-entry-content entry))))
+        (dolist (uri (list "/elfeed/" "/elfeed/index.html"
+                           (concat "/elfeed/content/" ref)))
+          (let ((response (elfeed-web-ng-test--request "GET" uri)))
+            (should (equal (list uri 200 "no-referrer")
+                           (list uri (plist-get response :status)
+                                 (plist-get (plist-get response :headers)
+                                            :Referrer-Policy))))))))))
 
 (ert-deftest elfeed-web-ng-test-same-origin-request-passes ()
   "A same-origin state change passes the guards and takes effect."
@@ -405,6 +466,261 @@ ARGS are those of `elfeed-web-ng-test--request'."
       (elfeed-web-ng-test--counting-webids calls
         (should-not (elfeed-web-ng-lookup "../etc"))
         (should (= 0 calls))))))
+
+;;; Tag updates.
+
+(ert-deftest elfeed-web-ng-test-valid-tag ()
+  "Tags are short words of letters, digits, - and _, plus the star."
+  (should (elfeed-web-ng--valid-tag-p "unread"))
+  (should (elfeed-web-ng--valid-tag-p "to_source-2"))
+  (should (elfeed-web-ng--valid-tag-p "★"))
+  (should (elfeed-web-ng--valid-tag-p (make-string 64 ?a)))
+  (should-not (elfeed-web-ng--valid-tag-p (make-string 65 ?a)))
+  (should-not (elfeed-web-ng--valid-tag-p ""))
+  (should-not (elfeed-web-ng--valid-tag-p "two words"))
+  (should-not (elfeed-web-ng--valid-tag-p "a/b"))
+  (should-not (elfeed-web-ng--valid-tag-p 'unread))
+  (should-not (elfeed-web-ng--valid-tag-p 5)))
+
+(defun elfeed-web-ng-test--put-tags (body)
+  "PUT BODY to /elfeed/tags and return the response."
+  (elfeed-web-ng-test--request "PUT" "/elfeed/tags" :body body))
+
+(ert-deftest elfeed-web-ng-test-tags-rejects-malformed-requests ()
+  "Each malformed tag request gets its own 4xx status, never a 500."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let ((webid (elfeed-web-ng-make-webid (elfeed-web-ng-test--add-entry))))
+        (should (equal 405 (elfeed-web-ng-test--status "GET" "/elfeed/tags")))
+        (dolist (case
+                 `((nil . 400)
+                   ("" . 400)
+                   ("not json" . 400)
+                   ("[1, 2]" . 400)
+                   ("{\"entries\": 5}" . 400)
+                   ("{\"entries\": \"aaaaaaaaaaaa\"}" . 400)
+                   (,(format "{\"add\": \"unread\", \"entries\": [%S]}" webid) . 400)
+                   (,(format "{\"add\": [\"a b\"], \"entries\": [%S]}" webid) . 400)
+                   (,(format "{\"remove\": [5], \"entries\": [%S]}" webid) . 400)
+                   ("{\"add\": [\"x\"], \"entries\": [\"aaaaaaaaaaaa\"]}" . 404)
+                   ("{\"add\": [\"x\"], \"entries\": [5]}" . 404)))
+          (should (equal case
+                         (cons (car case)
+                               (plist-get (elfeed-web-ng-test--put-tags (car case))
+                                          :status)))))))))
+
+(ert-deftest elfeed-web-ng-test-tags-updates-entries ()
+  "A valid tag request applies the change and returns each entry's tags."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let* ((entry (elfeed-web-ng-test--add-entry))
+             (webid (elfeed-web-ng-make-webid entry))
+             (response (elfeed-web-ng-test--put-tags
+                        (format "{\"add\": [\"★\"], \"remove\": [\"unread\"], \"entries\": [%S]}"
+                                webid))))
+        (should (equal 200 (plist-get response :status)))
+        (should (equal (list '★) (elfeed-entry-tags entry)))
+        (should (equal `((,(intern webid) . ["★"]))
+                       (elfeed-web-ng-test--json response)))))))
+
+;;; Feed updates.
+
+(defvar elfeed-web-ng-test--queue 0
+  "Length of the stand-in feed fetch queue.")
+
+(defvar elfeed-web-ng-test--scheduled nil
+  "Functions scheduled with `run-at-time', most recent first.")
+
+(defvar elfeed-web-ng-test--updates 0
+  "Number of times `elfeed-update' was called.")
+
+(defmacro elfeed-web-ng-test--with-fetch-queue (&rest body)
+  "Run BODY against a stand-in fetch queue and timer list.
+The queue length is `elfeed-web-ng-test--queue'; timers are recorded in
+`elfeed-web-ng-test--scheduled' instead of running, and `elfeed-update'
+calls are counted in `elfeed-web-ng-test--updates'."
+  (declare (indent 0))
+  `(let ((elfeed-web-ng-test--queue 0)
+         (elfeed-web-ng-test--scheduled nil)
+         (elfeed-web-ng-test--updates 0)
+         (elfeed-web-ng--feed-done-timer nil)
+         (elfeed-web-ng--feed-done-waiting nil))
+     (cl-letf (((symbol-function 'elfeed-queue-count-total)
+                (lambda () elfeed-web-ng-test--queue))
+               ((symbol-function 'elfeed-update)
+                (lambda () (cl-incf elfeed-web-ng-test--updates)))
+               ((symbol-function 'run-at-time)
+                (lambda (_time _repeat function &rest _args)
+                  (push function elfeed-web-ng-test--scheduled)
+                  (list 'test-timer function))))
+       ,@body)))
+
+(defun elfeed-web-ng-test--run-timers ()
+  "Run and clear the recorded timers, capturing any responses they send.
+Return the responses as a list of (STATUS . BODY)."
+  (let ((timers (reverse elfeed-web-ng-test--scheduled))
+        (responses nil))
+    (setq elfeed-web-ng-test--scheduled nil)
+    (cl-letf (((symbol-function 'httpd-send-header)
+               (lambda (_proc _mime status &rest _headers)
+                 (setq httpd--header-sent t)
+                 (push (cons status (buffer-string)) responses))))
+      (mapc #'funcall timers))
+    (nreverse responses)))
+
+(ert-deftest elfeed-web-ng-test-feed-update-poll-chain ()
+  "Repeated monitoring keeps a single poll timer running."
+  (elfeed-web-ng-test--with-fetch-queue
+    (setq elfeed-web-ng-test--queue 3)
+    (elfeed-web-ng--monitor-feed-update)
+    (elfeed-web-ng--monitor-feed-update)
+    (should (= 1 (length elfeed-web-ng-test--scheduled)))
+    ;; Each poll of a non-empty queue schedules exactly one more.
+    (elfeed-web-ng-test--run-timers)
+    (should (= 1 (length elfeed-web-ng-test--scheduled)))
+    (setq elfeed-web-ng-test--queue 0)
+    (elfeed-web-ng-test--run-timers)
+    (should-not elfeed-web-ng-test--scheduled)
+    (should-not elfeed-web-ng--feed-done-timer)))
+
+(ert-deftest elfeed-web-ng-test-feed-update-skips-fetch-in-flight ()
+  "A feed update starts a fetch only when none is in flight."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-fetch-queue
+      (setq elfeed-web-ng-test--queue 2)
+      (should (equal 200 (elfeed-web-ng-test--status "POST" "/elfeed/feed-update")))
+      (should (= 0 elfeed-web-ng-test--updates))
+      (setq elfeed-web-ng-test--queue 0)
+      (should (equal 200 (elfeed-web-ng-test--status "POST" "/elfeed/feed-update")))
+      (should (= 1 elfeed-web-ng-test--updates)))))
+
+(ert-deftest elfeed-web-ng-test-feed-update-done-when-idle ()
+  "With nothing being fetched, the long poll answers at once."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-fetch-queue
+      (let ((response (elfeed-web-ng-test--request
+                       "GET" "/elfeed/feed-update-done")))
+        (should (equal 200 (plist-get response :status)))
+        (should (equal '((status . "done"))
+                       (elfeed-web-ng-test--json response)))
+        (should-not elfeed-web-ng--feed-done-waiting)))))
+
+(ert-deftest elfeed-web-ng-test-feed-update-done-without-trigger ()
+  "A long poll parked during an update started from Emacs is answered.
+No /feed-update request ever starts the poll chain in this case."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-fetch-queue
+      (setq elfeed-web-ng-test--queue 4)
+      (should-not (elfeed-web-ng-test--request "GET" "/elfeed/feed-update-done"))
+      (should (= 1 (length elfeed-web-ng--feed-done-waiting)))
+      (setq elfeed-web-ng-test--queue 0)
+      (should (equal '((200 . "{\"status\":\"done\"}"))
+                     (elfeed-web-ng-test--run-timers)))
+      (should-not elfeed-web-ng--feed-done-waiting))))
+
+;;; Search.
+
+(defun elfeed-web-ng-test--search (uri)
+  "GET URI from the search endpoint and return the entry titles found."
+  (let ((response (elfeed-web-ng-test--request "GET" uri)))
+    (should (equal 200 (plist-get response :status)))
+    (mapcar (lambda (e) (alist-get 'title e))
+            (elfeed-web-ng-test--json response))))
+
+(ert-deftest elfeed-web-ng-test-search-query ()
+  "A missing or empty query matches everything; a filter narrows it."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--add-entry :id "1" :title "one" :date 1000)
+      (elfeed-web-ng-test--add-entry :id "2" :title "two" :date 2000 :tags nil)
+      (should (equal '("two" "one") (elfeed-web-ng-test--search "/elfeed/search")))
+      (should (equal '("two" "one") (elfeed-web-ng-test--search "/elfeed/search?q=")))
+      (should (equal '("one") (elfeed-web-ng-test--search
+                               "/elfeed/search?q=%2Bunread"))))))
+
+(ert-deftest elfeed-web-ng-test-search-limit ()
+  "No query can raise the number of results above `elfeed-web-ng-limit'."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (dotimes (i 5)
+        (elfeed-web-ng-test--add-entry :id (number-to-string i) :date (* 1000 (1+ i))))
+      (let ((elfeed-web-ng-limit 2))
+        (should (= 2 (length (elfeed-web-ng-test--search "/elfeed/search?q="))))
+        (should (= 2 (length (elfeed-web-ng-test--search
+                              "/elfeed/search?q=%23100000"))))
+        ;; A lower limit in the query is honoured.
+        (should (= 1 (length (elfeed-web-ng-test--search
+                              "/elfeed/search?q=%231"))))))))
+
+;;; Request bodies.
+
+(ert-deftest elfeed-web-ng-test-body-keys-not-interned ()
+  "Object keys in a request body never become symbols."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let* ((prefix (format "elfeed-web-ng-test-key-%d-" (random 1000000)))
+             (keys (cl-loop for i below 200 collect (format "%s%d" prefix i)))
+             (body (concat "{"
+                           (mapconcat (lambda (k) (format "%S: 1" k)) keys ", ")
+                           ", \"entries\": []}")))
+        (should (equal 200 (plist-get (elfeed-web-ng-test--put-tags body)
+                                      :status)))
+        (should-not (cl-some #'intern-soft keys))))))
+
+(ert-deftest elfeed-web-ng-test-body-size-limit ()
+  "A request body over the size limit is refused before it is parsed."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (let ((padding (make-string elfeed-web-ng--max-body-size ?\s)))
+        (should (equal 413 (plist-get (elfeed-web-ng-test--put-tags
+                                       (concat "{\"entries\": []}" padding))
+                                      :status)))
+        (should (equal 200 (plist-get (elfeed-web-ng-test--put-tags
+                                       "{\"entries\": []}")
+                                      :status)))))))
+
+(defmacro elfeed-web-ng-test--with-curate (&rest body)
+  "Run BODY with a stand-in for elfeed-curate.
+Annotations live in the entry's meta, and setting a non-string signals,
+as the real package does."
+  (declare (indent 0))
+  ;; `featurep' ignores a let-binding of `features', so provide the
+  ;; feature for real and withdraw it afterwards.
+  `(let ((provided (featurep 'elfeed-curate)))
+     (unwind-protect
+         (cl-letf (((symbol-function 'elfeed-curate-get-entry-annotation)
+                    (lambda (entry) (or (elfeed-meta entry :test-annotation) "")))
+                   ((symbol-function 'elfeed-curate-set-entry-annotation)
+                    (lambda (entry annotation)
+                      (cl-check-type annotation string)
+                      (setf (elfeed-meta entry :test-annotation) annotation))))
+           (provide 'elfeed-curate)
+           ,@body)
+       (unless provided
+         (setq features (delq 'elfeed-curate features))))))
+
+(ert-deftest elfeed-web-ng-test-annotation-type ()
+  "Only a string or null is accepted as an annotation."
+  (elfeed-web-ng-test--with-server
+    (elfeed-web-ng-test--with-db
+      (elfeed-web-ng-test--with-curate
+        (let* ((entry (elfeed-web-ng-test--add-entry))
+               (uri (concat "/elfeed/annotation/" (elfeed-web-ng-make-webid entry))))
+          (dolist (body '("{\"annotation\": 5}"
+                          "{\"annotation\": [1]}"
+                          "{\"annotation\": {\"a\": 1}}"
+                          "{\"annotation\": true}"))
+            (should (equal (cons body 400)
+                           (cons body (elfeed-web-ng-test--status
+                                       "PUT" uri :body body)))))
+          ;; Nothing was stored by the rejected requests.
+          (should-not (elfeed-meta entry :test-annotation))
+          (should (equal 200 (elfeed-web-ng-test--status
+                              "PUT" uri :body "{\"annotation\": \"note\"}")))
+          (should (equal "note" (elfeed-meta entry :test-annotation)))
+          (should (equal 200 (elfeed-web-ng-test--status
+                              "PUT" uri :body "{\"annotation\": null}")))
+          (should (equal "" (elfeed-meta entry :test-annotation))))))))
 
 ;;; JSON shape served to the frontend.
 

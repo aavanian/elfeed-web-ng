@@ -65,8 +65,9 @@ Example: \\='((:label \"Unread\" :filter \"+unread\"))"
   "Hostnames permitted in the HTTP Host and Origin request headers.
 
 Requests whose Host header names a host outside this list are rejected,
-which blocks DNS-rebinding attacks; the same list gates the Origin
-header on cross-site requests, which blocks CSRF.
+which blocks DNS-rebinding attacks.  Cross-site requests are blocked
+separately: a request carrying an Origin header must come from the
+same host and port it was sent to.
 
 When nil the allowlist is derived automatically from `httpd-host' (when
 it names a specific address) plus the loopback names.  That default
@@ -75,9 +76,11 @@ configuration.  Set this to a list of hostname strings to permit
 additional names, for example a Tailscale MagicDNS name reached
 alongside the raw tailnet IP.  Ports are ignored; list bare hostnames.
 
-Loopback names are always permitted: they cannot be the target of a
-DNS-rebinding attack, since the browser only sends them when the user
-genuinely navigated to a loopback address."
+Loopback names (including \"[::1]\") are always permitted: they cannot be
+the target of a DNS-rebinding attack, since the browser only sends them
+when the user genuinely navigated to a loopback address, for example
+through an SSH tunnel.  Other services on the same machine are still
+kept out by the Origin check."
   :group 'elfeed
   :type '(choice (const :tag "Auto (derive from `httpd-host')" nil)
                  (repeat string)))
@@ -186,6 +189,14 @@ allowed set, preventing unbounded obarray growth via `intern'."
        (<= (length tag) 64)
        (string-match-p "\\`[-a-zA-Z0-9_★]+\\'" tag)))
 
+(defun elfeed-web-ng--valid-tags-p (tags)
+  "Return non-nil if TAGS, a decoded JSON value, is absent or valid.
+A valid value is an array whose every element satisfies
+`elfeed-web-ng--valid-tag-p'."
+  (or (null tags)
+      (and (vectorp tags)
+           (cl-every #'elfeed-web-ng--valid-tag-p tags))))
+
 (defun elfeed-web-ng--valid-ref-p (ref)
   "Return non-nil if REF is a well-formed content reference.
 Elfeed content refs are SHA-1 hex digests.  Rejecting anything else
@@ -194,6 +205,12 @@ such as slashes or \"..\" when it is concatenated into a filename."
   (and (stringp ref)
        (let ((case-fold-search nil))
          (string-match-p "\\`[0-9a-f]\\{40\\}\\'" ref))))
+
+(defconst elfeed-web-ng--max-body-size 65536
+  "Largest request body, in bytes, that the API endpoints accept.
+The client only ever sends small JSON objects: tag changes and
+annotations.  simple-httpd itself reads a body of any length, so the
+bound is applied before the body is decoded or parsed.")
 
 (defconst elfeed-web-ng--loopback-hosts
   '("localhost" "127.0.0.1" "::1" "ip6-localhost")
@@ -215,6 +232,20 @@ Handles bracketed IPv6 literals such as \"[::1]:8080\"."
    ((string-match "\\`\\([^:]*\\):[0-9]+\\'" host) (match-string 1 host))
    (t host)))
 
+(defun elfeed-web-ng--hostname (host)
+  "Return the hostname in HOST in a comparable form, or nil.
+HOST is a Host header value, an allowlist entry or a URL host.  The
+port, letter case and IPv6 brackets are dropped, so \"[::1]:8082\" and
+\"::1\" compare equal."
+  (when-let* ((name (elfeed-web-ng--strip-port host)))
+    (downcase (string-trim name "\\[" "\\]"))))
+
+(defun elfeed-web-ng--host-port (host)
+  "Return the port number in the Host header value HOST, or nil."
+  (and host
+       (string-match "\\(?:\\`[^:]*\\|\\]\\):\\([0-9]+\\)\\'" host)
+       (string-to-number (match-string 1 host))))
+
 (defun elfeed-web-ng--effective-allowed-hosts ()
   "Return the normalized list of permitted hostnames.
 Combines the loopback names with `elfeed-web-ng-allowed-hosts', or, when
@@ -224,25 +255,40 @@ that is nil, with `httpd-host' if it names a specific address."
                  (and (stringp httpd-host)
                       (not (member httpd-host '("0.0.0.0" "::")))
                       (list httpd-host)))))
-    (mapcar (lambda (h) (downcase (elfeed-web-ng--strip-port h)))
+    (mapcar #'elfeed-web-ng--hostname
             (append elfeed-web-ng--loopback-hosts extra))))
 
 (defun elfeed-web-ng--host-allowed-p (host)
   "Return non-nil if the Host header HOST is permitted."
-  (and-let* ((name (and host (downcase (elfeed-web-ng--strip-port host)))))
+  (and-let* ((name (elfeed-web-ng--hostname host)))
     (and (member name (elfeed-web-ng--effective-allowed-hosts)) t)))
 
-(defun elfeed-web-ng--origin-allowed-p (origin)
-  "Return non-nil if ORIGIN is absent or names a permitted host.
-A missing Origin is permitted; the Host check guards those requests.  An
-opaque \"null\" origin, or one naming a host outside the allowlist, is
-rejected so cross-site requests cannot drive state-changing endpoints."
+(defconst elfeed-web-ng--default-ports '(("http" . 80) ("https" . 443))
+  "Port implied by each scheme a browser sends in an Origin header.
+Looked up here rather than with `url-port', which loads the url-http
+library and its proxy setup on first use.")
+
+(defun elfeed-web-ng--origin-allowed-p (origin host)
+  "Return non-nil if ORIGIN is absent or names the server at HOST.
+ORIGIN and HOST are the values of the request headers of those names.
+A missing Origin is permitted; the Host check guards those requests.
+Otherwise the Origin must name the very host and port the request was
+addressed to: matching the hostname alone would admit any other web
+service on the same machine, such as a dev server on localhost, as a
+source of cross-site requests.  A port missing from HOST is the
+default port of the Origin's scheme.  The scheme itself is not
+compared, so a TLS-terminating proxy in front of the server still
+works.  An opaque \"null\" origin is rejected."
   (or (null origin)
-      (and-let* ((host (and (not (equal origin "null"))
-                            (ignore-errors
-                              (url-host (url-generic-parse-url origin))))))
-        (and (member (downcase host) (elfeed-web-ng--effective-allowed-hosts))
-             t))))
+      (and-let* (((not (equal origin "null")))
+                 (url (ignore-errors (url-generic-parse-url origin)))
+                 (origin-name (elfeed-web-ng--hostname (url-host url)))
+                 ((not (string-empty-p origin-name))))
+        (let ((default-port (cdr (assoc (url-type url)
+                                        elfeed-web-ng--default-ports))))
+          (and (equal origin-name (elfeed-web-ng--hostname host))
+               (equal (or (url-portspec url) default-port)
+                      (or (elfeed-web-ng--host-port host) default-port)))))))
 
 (defun elfeed-web-ng--reject (header value)
   "Send a generic 403 for a request rejected by the HEADER allowlist.
@@ -270,17 +316,23 @@ MESSAGE, when non-nil, is the error payload in place of the numeric STATUS."
 
 (defmacro elfeed-web-ng--with (&rest body)
   "Execute BODY for a permitted, enabled request, else send an error.
-Rejects the request when its Host or Origin header falls outside
-`elfeed-web-ng-allowed-hosts', and sends 403 when the interface is
-disabled."
+Rejects the request when its Host header falls outside
+`elfeed-web-ng-allowed-hosts' or its Origin header names another
+server (see `elfeed-web-ng--origin-allowed-p'), sends 403 when the interface is
+disabled, and 413 when the request body exceeds
+`elfeed-web-ng--max-body-size'."
   (declare (indent 0))
   `(cond
     ((not (elfeed-web-ng--host-allowed-p (elfeed-web-ng--header "Host")))
      (elfeed-web-ng--reject "Host" (elfeed-web-ng--header "Host")))
-    ((not (elfeed-web-ng--origin-allowed-p (elfeed-web-ng--header "Origin")))
+    ((not (elfeed-web-ng--origin-allowed-p (elfeed-web-ng--header "Origin")
+                                           (elfeed-web-ng--header "Host")))
      (elfeed-web-ng--reject "Origin" (elfeed-web-ng--header "Origin")))
     ((not elfeed-web-ng-enabled)
      (elfeed-web-ng--send-json-error 403))
+    ((> (length (cadr (assoc "Content" httpd-request)))
+        elfeed-web-ng--max-body-size)
+     (elfeed-web-ng--send-json-error 413))
     (t ,@body)))
 
 (defmacro elfeed-web-ng--with-method (method &rest body)
@@ -294,6 +346,25 @@ must be used inside a `defservlet*' body where that binding is in scope."
   `(if (equal (caar httpd-request) ,method)
        (progn ,@body)
      (elfeed-web-ng--send-json-error 405)))
+
+(defun elfeed-web-ng--request-json ()
+  "Return the request body parsed as a JSON object, or nil.
+The object is an alist with string keys: reading keys as symbols would
+intern every key a client sends, growing the obarray without bound.
+Nil stands for a missing body, invalid JSON, or a JSON value that is
+not a non-empty object.  Reads the free variable `httpd-request', so it
+must be called inside a `defservlet*' body."
+  (when-let* ((content (cadr (assoc "Content" httpd-request)))
+              (json (ignore-errors
+                      (let ((json-key-type 'string)
+                            (json-object-type 'alist))
+                        (json-read-from-string
+                         (decode-coding-string content 'utf-8))))))
+    (and (consp json) json)))
+
+(defun elfeed-web-ng--json-field (json key)
+  "Return the value of KEY, a string, in the JSON object alist JSON."
+  (cdr (assoc key json)))
 
 (defservlet* elfeed/things/:webid application/json ()
   "Return a requested thing (entry or feed)."
@@ -322,19 +393,31 @@ must be used inside a `defservlet*' body where that binding is in scope."
           ;; The content is arbitrary feed HTML.  Served top-level (not just
           ;; inside the app's sandboxed iframe) it would otherwise run scripts
           ;; in this origin; the sandbox directive disables that, and
-          ;; 'unsafe-inline' keeps the inline <style> above working.
+          ;; 'unsafe-inline' keeps the inline <style> above working.  No
+          ;; Referer tells the hosts of its images where the reader lives.
           (httpd-send-header t "text/html" 200
                              :Content-Security-Policy
-                             "sandbox allow-popups; default-src 'self'; style-src 'unsafe-inline'"))
+                             "sandbox allow-popups; default-src 'self'; style-src 'unsafe-inline'"
+                             :Referrer-Policy "no-referrer"))
       (elfeed-web-ng--send-json-error 404))))
+
+(defun elfeed-web-ng--search-filter (query)
+  "Parse the search QUERY into a filter capped at `elfeed-web-ng-limit'.
+A nil QUERY, from a request without one, matches every entry.  The cap
+is applied after parsing because the filter syntax lets a \"#N\" in the
+query set the limit, and the last one wins: prepending the configured
+limit to the query would let the client override it."
+  (let* ((filter (elfeed-search-parse-filter (or query "")))
+         (limit (plist-get filter :limit)))
+    (plist-put filter :limit (min (or limit elfeed-web-ng-limit)
+                                  elfeed-web-ng-limit))))
 
 (defservlet* elfeed/search application/json (q)
   "Perform a search operation with Q and return the results."
   (elfeed-web-ng--with
-    (let* ((results ())
-           (modified-q (format "#%d %s" elfeed-web-ng-limit q))
-           (filter (elfeed-search-parse-filter modified-q))
-           (count 0))
+    (let ((results ())
+          (filter (elfeed-web-ng--search-filter q))
+          (count 0))
       (with-elfeed-db-visit (entry feed)
         (when (elfeed-search-filter filter entry feed count)
           (push entry results)
@@ -373,31 +456,26 @@ object with any of these properties:
 
 The current set of tags for each entry will be returned."
   (elfeed-web-ng--with
-    (let* ((request (caar httpd-request))
-           (content (decode-coding-string
-                     (cadr (assoc "Content" httpd-request)) 'utf-8))
-           (json (ignore-errors (json-read-from-string content)))
-           (add (append (cdr (assoc 'add json)) nil))
-           (remove (append (cdr (assoc 'remove json)) nil))
-           (webids (cdr (assoc 'entries json)))
-           (entries (cl-map 'list #'elfeed-web-ng-lookup webids))
-           (tags-valid (and (cl-every #'elfeed-web-ng--valid-tag-p add)
-                            (cl-every #'elfeed-web-ng--valid-tag-p remove)))
-           (status
-            (cond
-             ((not (equal request "PUT")) 405)
-             ((null json) 400)
-             ((not tags-valid) 400)
-             ((cl-some #'null entries) 404)
-             (t 200))))
-      (if (not (eql status 200))
-          (elfeed-web-ng--send-json-error status)
-        (cl-loop for entry in entries
-                 for webid = (elfeed-web-ng-make-webid entry)
-                 do (apply #'elfeed-tag entry (mapcar #'intern add))
-                 do (apply #'elfeed-untag entry (mapcar #'intern remove))
-                 collect (cons webid (elfeed-entry-tags entry)) into result
-                 finally (princ (if result (json-encode result) "{}")))))))
+    (elfeed-web-ng--with-method "PUT"
+      (let* ((json (elfeed-web-ng--request-json))
+             (add (elfeed-web-ng--json-field json "add"))
+             (remove (elfeed-web-ng--json-field json "remove"))
+             (webids (elfeed-web-ng--json-field json "entries")))
+        (if (not (and json
+                      (elfeed-web-ng--valid-tags-p add)
+                      (elfeed-web-ng--valid-tags-p remove)
+                      (or (null webids) (vectorp webids))))
+            (elfeed-web-ng--send-json-error 400)
+          (let* ((webids (append webids nil))
+                 (entries (mapcar #'elfeed-web-ng-lookup webids)))
+            (if (memq nil entries)
+                (elfeed-web-ng--send-json-error 404)
+              (cl-loop for webid in webids
+                       for entry in entries
+                       do (apply #'elfeed-tag entry (mapcar #'intern add))
+                       do (apply #'elfeed-untag entry (mapcar #'intern remove))
+                       collect (cons webid (elfeed-entry-tags entry)) into result
+                       finally (princ (if result (json-encode result) "{}"))))))))))
 
 (defservlet* elfeed/api application/json ()
   "Return server capabilities for feature negotiation."
@@ -441,15 +519,17 @@ and empty string for GET."
        ((equal method "PUT")
         (if (not (featurep 'elfeed-curate))
             (elfeed-web-ng--send-json-error 501 "elfeed-curate not available")
-          (let* ((content (decode-coding-string
-                           (cadr (assoc "Content" httpd-request)) 'utf-8))
-                 (json-data (ignore-errors (json-read-from-string content)))
-                 (annotation (cdr (assoc 'annotation json-data))))
-            (if (null json-data)
-                (elfeed-web-ng--send-json-error 400 "invalid JSON")
+          (let* ((json-data (elfeed-web-ng--request-json))
+                 (annotation (elfeed-web-ng--json-field json-data "annotation")))
+            (cond
+             ((null json-data)
+              (elfeed-web-ng--send-json-error 400 "invalid JSON"))
+             ((not (or (null annotation) (stringp annotation)))
+              (elfeed-web-ng--send-json-error 400 "annotation must be a string"))
+             (t
               (elfeed-curate-set-entry-annotation entry (or annotation ""))
               (princ (json-encode (list :webid webid
-                                        :annotation (elfeed-curate-get-entry-annotation entry))))))))
+                                        :annotation (elfeed-curate-get-entry-annotation entry)))))))))
        (t
         (elfeed-web-ng--send-json-error 405 "method not allowed"))))))
 
@@ -491,11 +571,14 @@ running so `feed-update-done' clients are notified."
 (defservlet* elfeed/feed-update-done application/json ()
   "Long-poll endpoint that responds when a feed update completes.
 If the update already finished before this request arrived, respond
-immediately rather than parking the process with nothing to drain it."
+immediately rather than parking the process with nothing to drain it.
+Otherwise park it and make sure a completion-poll chain is running: the
+update may have been started from Emacs rather than by `feed-update'."
   (elfeed-web-ng--with
     (if (zerop (elfeed-queue-count-total))
         (princ (json-encode '(:status "done")))
-      (push (httpd-discard-buffer) elfeed-web-ng--feed-done-waiting))))
+      (push (httpd-discard-buffer) elfeed-web-ng--feed-done-waiting)
+      (elfeed-web-ng--monitor-feed-update))))
 
 (defun elfeed-web-ng--serve-static (path request)
   "Serve PATH under `elfeed-web-ng--data-root' for REQUEST.
@@ -533,8 +616,11 @@ forever."
               (progn
                 (insert-file-contents
                  (expand-file-name "index.html" elfeed-web-ng--data-root))
+                ;; The reader's about:srcdoc frame inherits this page's
+                ;; referrer policy, so it covers feed images and embeds.
                 (httpd-send-header t "text/html" 200
-                                   :Cache-Control "no-cache, no-store, must-revalidate"))
+                                   :Cache-Control "no-cache, no-store, must-revalidate"
+                                   :Referrer-Policy "no-referrer"))
             (elfeed-web-ng--serve-static path request))))))))
 
 (defun httpd/favicon.ico (proc &rest _)
