@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useCallback, useRef, useState } from 'preact/hooks';
 import * as api from './lib/api';
 import * as store from './lib/store';
+import { runSearch } from './lib/search';
 import { SavedSearches } from './components/SavedSearches';
 import { SearchBar } from './components/SearchBar';
 import { EntryList } from './components/EntryList';
@@ -29,13 +30,7 @@ export function App() {
 
         const initialQuery = searches.length > 0 ? searches[0].filter : '@3-days-old';
         store.query.value = initialQuery;
-
-        store.loading.value = true;
-        try {
-          store.entries.value = await api.search(initialQuery);
-        } finally {
-          store.loading.value = false;
-        }
+        await runSearch(initialQuery);
       } catch {
         store.error.value = 'Could not reach Elfeed backend.';
       }
@@ -43,16 +38,10 @@ export function App() {
   }, []);
 
   const doSearch = useCallback(async (q) => {
-    store.loading.value = true;
-    try {
-      const results = await api.search(q);
-      store.entries.value = results;
-      store.error.value = null;
+    if (await runSearch(q)) {
       // Fresh results: start at the top rather than a stale offset.
       savedScrollY = 0;
       window.scrollTo(0, 0);
-    } finally {
-      store.loading.value = false;
     }
   }, []);
 
