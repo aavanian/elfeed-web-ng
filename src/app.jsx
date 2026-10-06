@@ -19,6 +19,9 @@ export function App() {
   // actual scroll happens in a layout effect, once the list-pane is back in the
   // layout (on mobile it was display:none while the entry was open).
   const pendingRestore = useRef(false);
+  // Set while a search pops the history state of the entry it closed, so
+  // that popstate is not taken for a Back press.
+  const poppingForSearch = useRef(false);
   const [showBuild, setShowBuild] = useState(false);
 
   useEffect(() => {
@@ -47,7 +50,13 @@ export function App() {
 
   const onSearch = useCallback(async (q) => {
     store.query.value = q;
-    store.selectedEntry.value = null;
+    if (store.selectedEntry.value) {
+      // Opening the entry pushed a history state; drop it along with the
+      // entry, or the next Back press would land on it and do nothing.
+      store.selectedEntry.value = null;
+      poppingForSearch.current = true;
+      history.back();
+    }
     await doSearch(q);
   }, [doSearch]);
 
@@ -71,6 +80,10 @@ export function App() {
     if (prevRestoration !== null) history.scrollRestoration = 'manual';
 
     const onPop = () => {
+      if (poppingForSearch.current) {
+        poppingForSearch.current = false;
+        return;
+      }
       if (store.selectedEntry.value) {
         pendingRestore.current = true;
         store.selectedEntry.value = null;
