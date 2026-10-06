@@ -120,6 +120,8 @@ export function App() {
       await api.feedUpdate();
       await api.feedUpdateDone();
       await doSearch(store.query.value);
+    } catch {
+      store.error.value = 'Feed update failed.';
     } finally {
       store.updating.value = false;
     }

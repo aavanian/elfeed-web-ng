@@ -128,7 +128,7 @@ export function EntryList({ onSelect, onSearch }) {
     setMarkAllError(null);
     try {
       await api.markAllRead();
-      onSearch(store.query.value);
+      await onSearch(store.query.value);
     } catch {
       setMarkAllError('Failed to mark all read.');
     } finally {
