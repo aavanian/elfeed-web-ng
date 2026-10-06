@@ -61,12 +61,21 @@ Add `elfeed-web-ng` to your `load-path` and configure:
   
   so and binding the server to that variable. Then I can access the interface safely from my mobile device with a home-screen bookmark to "http://machine-name.tailnet-name.ts.net:8082/elfeed" 
 
+### Usage
+
+Start the server with `M-x elfeed-web-ng-start` (or call `(elfeed-web-ng-start)`
+in your configuration), then open `http://<httpd-host>:<httpd-port>/elfeed/` in a
+browser: with the example above, <http://127.0.0.1:8082/elfeed/>. On a phone, add
+the page to the home screen to use it as an app. `M-x elfeed-web-ng-stop` stops
+the server.
+
 ### Configuration
 
+- `elfeed-web-ng-enabled` — whether the interface answers requests; `elfeed-web-ng-start` sets it and `elfeed-web-ng-stop` clears it (default: `nil`)
 - `elfeed-web-ng-saved-searches` — list of saved searches displayed as quick-access buttons
 - `elfeed-web-ng-limit` — maximum entries per search (default: 512)
 - `httpd-host` / `httpd-port` — server binding (from simple-httpd)
-- `elfeed-web-ng-allowed-hosts` — hostnames permitted in the `Host`/`Origin` headers (default: derived)
+- `elfeed-web-ng-allowed-hosts` — hostnames permitted in the `Host` header (default: derived, see Security)
 - `elfeed-web-ng-allow-public-bind` — silence the all-interfaces bind warning (default: `nil`)
 
 **Note:** `elfeed-web-ng-stop` stops the underlying simple-httpd server, which is shared across all packages that use it (e.g., impatient-mode, skewer-mode). If you need to keep simple-httpd running for other packages, set `elfeed-web-ng-enabled` to `nil` instead.
