@@ -6,9 +6,12 @@
 ;; Based on elfeed-web by Christopher Wellons <wellons@nullprogram.com>
 ;; Original: https://github.com/skeeto/elfeed (Unlicense)
 
+;; Author: Alexandre Avanian <git@alexandre.avanian.net>
+;; Maintainer: Alexandre Avanian <git@alexandre.avanian.net>
 ;; URL: https://github.com/aavanian/elfeed-web-ng
 ;; Version: 1.0.0
 ;; Package-Requires: ((simple-httpd "1.5.1") (elfeed "3.2.0") (emacs "29.2"))
+;; Keywords: comm, news
 
 ;;; Commentary:
 
@@ -18,17 +21,19 @@
 ;;
 ;; Endpoints:
 ;;
-;; /elfeed/<path>           -- static files (HTML, JS, CSS)
-;; /elfeed/api              -- server capabilities
-;; /elfeed/search?q=FILTER  -- search entries
-;; /elfeed/things/<webid>   -- entry or feed as JSON
-;; /elfeed/content/<ref>    -- entry content (HTML)
-;; /elfeed/tags             -- PUT to modify entry tags
-;; /elfeed/feed-update      -- trigger a feed update
-;; /elfeed/feed-update-done -- long-poll until feed update completes
-;; /elfeed/mark-all-read    -- remove unread from all entries
-;; /elfeed/saved-searches   -- configured saved searches
-;; /elfeed/annotation/<id>  -- GET/PUT entry annotations (requires elfeed-curate)
+;; GET  /elfeed/<path>            -- static files (HTML, JS, CSS)
+;; GET  /elfeed/api               -- server version and optional features
+;; GET  /elfeed/search?q=FILTER   -- search entries
+;; GET  /elfeed/content/<ref>     -- entry content (HTML)
+;; PUT  /elfeed/tags              -- add and remove tags on entries
+;; POST /elfeed/feed-update       -- trigger a feed update
+;; GET  /elfeed/feed-update-done  -- long-poll until the feed update completes
+;; POST /elfeed/mark-all-read     -- remove unread from all entries
+;; GET  /elfeed/saved-searches    -- configured saved searches
+;; PUT  /elfeed/annotation/<id>   -- set an entry annotation (requires elfeed-curate)
+;; GET  /favicon.ico              -- redirect to the app icon
+;;
+;; The PUT and POST endpoints answer any other method with 405.
 
 ;;; Code:
 
@@ -366,34 +371,19 @@ must be called inside a `defservlet*' body."
   "Return the value of KEY, a string, in the JSON object alist JSON."
   (cdr (assoc key json)))
 
-(defservlet* elfeed/things/:webid application/json ()
-  "Return a requested thing (entry or feed)."
-  (elfeed-web-ng--with
-    (princ (json-encode (elfeed-web-ng-for-json (elfeed-web-ng-lookup webid))))))
-
 (defservlet* elfeed/content/:ref text/html ()
   "Serve content-addressable content at REF."
   (elfeed-web-ng--with
     (if-let* ((content (and (elfeed-web-ng--valid-ref-p ref)
                             (elfeed-deref (elfeed-ref--create :id ref)))))
         (progn
-          (princ (concat
-                  "<html><head>"
-                  "<meta charset=\"utf-8\">"
-                  "<style>"
-                  "body { background: #fdf6e3; color: #657b83; }"
-                  "a { color: #268bd2; }"
-                  "img { max-width: 100%; height: auto; }"
-                  "@media (prefers-color-scheme: dark) {"
-                  "  body { background: #002b36; color: #839496; }"
-                  "}"
-                  "</style></head><body>"
-                  content
-                  "</body></html>"))
+          ;; The reader parses this and applies its own styling, so only
+          ;; the encoding is declared here.
+          (princ (concat "<meta charset=\"utf-8\">" content))
           ;; The content is arbitrary feed HTML.  Served top-level (not just
           ;; inside the app's sandboxed iframe) it would otherwise run scripts
           ;; in this origin; the sandbox directive disables that, and
-          ;; 'unsafe-inline' keeps the inline <style> above working.  No
+          ;; 'unsafe-inline' keeps the feed's own inline styles working.  No
           ;; Referer tells the hosts of its images where the reader lives.
           (httpd-send-header t "text/html" 200
                              :Content-Security-Policy
@@ -427,6 +417,18 @@ limit to the query would let the client override it."
         (vconcat
          (mapcar #'elfeed-web-ng-for-json (nreverse results))))))))
 
+(defun elfeed-web-ng--redraw-search-buffer (entries)
+  "Show tag changes in the `*elfeed-search*' buffer, when one is open.
+ENTRIES are the entries whose tags changed, or t when the change may
+affect any entry and the whole listing is redrawn.  Elfeed redraws only
+for its own commands, so without this the Emacs view would keep showing
+the state from before a change made in the web interface."
+  (when-let* ((buffer (get-buffer "*elfeed-search*")))
+    (with-current-buffer buffer
+      (if (eq entries t)
+          (elfeed-search-update :force)
+        (apply #'elfeed-search-update-entry entries)))))
+
 (defun elfeed-web-ng--notify-feed-done ()
   "Respond to all clients waiting for feed update completion."
   (while elfeed-web-ng--feed-done-waiting
@@ -443,6 +445,7 @@ a link on a malicious page) from clearing unread state."
     (elfeed-web-ng--with-method "POST"
       (with-elfeed-db-visit (e _)
         (elfeed-untag e 'unread))
+      (elfeed-web-ng--redraw-search-buffer t)
       (princ (json-encode t)))))
 
 (defservlet* elfeed/tags application/json ()
@@ -475,21 +478,21 @@ The current set of tags for each entry will be returned."
                        do (apply #'elfeed-tag entry (mapcar #'intern add))
                        do (apply #'elfeed-untag entry (mapcar #'intern remove))
                        collect (cons webid (elfeed-entry-tags entry)) into result
-                       finally (princ (if result (json-encode result) "{}"))))))))))
+                       finally (progn
+                                 (elfeed-web-ng--redraw-search-buffer entries)
+                                 (princ (if result (json-encode result) "{}")))))))))))
 
 (defservlet* elfeed/api application/json ()
-  "Return server capabilities for feature negotiation."
+  "Return the server version and its optional features.
+Only features that depend on the setup are listed; everything else the
+frontend uses is always available."
   (elfeed-web-ng--with
     (princ (json-encode
             (list :server "elfeed-web-ng"
                   :version elfeed-web-ng--version
-                  :features (vconcat
-                             (delq nil
-                                   (list "saved-searches"
-                                         "tags"
-                                         "feed-update-done"
-                                         (when (featurep 'elfeed-curate)
-                                           "annotations")))))))))
+                  :features (if (featurep 'elfeed-curate)
+                                ["annotations"]
+                              []))))))
 
 (defservlet* elfeed/saved-searches application/json ()
   "Return the configured saved searches."
@@ -502,36 +505,29 @@ The current set of tags for each entry will be returned."
                      elfeed-web-ng-saved-searches))))))
 
 (defservlet* elfeed/annotation/:webid application/json ()
-  "GET or PUT an annotation on an entry.
-Requires elfeed-curate to be loaded; returns 501 otherwise for PUT,
-and empty string for GET."
+  "Set the annotation of an entry from a PUT JSON body.
+The body is an object whose \"annotation\" is a string, or null to
+clear it.  Requires elfeed-curate to be loaded; answers 501 otherwise.
+Annotations are read from the search results, not from here."
   (elfeed-web-ng--with
-    (let* ((method (caar httpd-request))
-           (entry (elfeed-web-ng-lookup webid)))
-      (cond
-       ((null entry)
-        (elfeed-web-ng--send-json-error 404 "not found"))
-       ((equal method "GET")
-        (let ((annotation (if (featurep 'elfeed-curate)
-                              (elfeed-curate-get-entry-annotation entry)
-                            "")))
-          (princ (json-encode (list :webid webid :annotation annotation)))))
-       ((equal method "PUT")
-        (if (not (featurep 'elfeed-curate))
-            (elfeed-web-ng--send-json-error 501 "elfeed-curate not available")
-          (let* ((json-data (elfeed-web-ng--request-json))
-                 (annotation (elfeed-web-ng--json-field json-data "annotation")))
-            (cond
-             ((null json-data)
-              (elfeed-web-ng--send-json-error 400 "invalid JSON"))
-             ((not (or (null annotation) (stringp annotation)))
-              (elfeed-web-ng--send-json-error 400 "annotation must be a string"))
-             (t
-              (elfeed-curate-set-entry-annotation entry (or annotation ""))
-              (princ (json-encode (list :webid webid
-                                        :annotation (elfeed-curate-get-entry-annotation entry)))))))))
-       (t
-        (elfeed-web-ng--send-json-error 405 "method not allowed"))))))
+    (elfeed-web-ng--with-method "PUT"
+      (let* ((entry (elfeed-web-ng-lookup webid))
+             (json (elfeed-web-ng--request-json))
+             (annotation (elfeed-web-ng--json-field json "annotation")))
+        (cond
+         ((null entry)
+          (elfeed-web-ng--send-json-error 404 "not found"))
+         ((not (featurep 'elfeed-curate))
+          (elfeed-web-ng--send-json-error 501 "elfeed-curate not available"))
+         ((null json)
+          (elfeed-web-ng--send-json-error 400 "invalid JSON"))
+         ((not (or (null annotation) (stringp annotation)))
+          (elfeed-web-ng--send-json-error 400 "annotation must be a string"))
+         (t
+          (elfeed-curate-set-entry-annotation entry (or annotation ""))
+          (princ (json-encode
+                  (list :webid webid
+                        :annotation (elfeed-curate-get-entry-annotation entry))))))))))
 
 (defvar elfeed-web-ng--feed-done-timer nil
   "Active completion-poll timer, or nil when no poll chain is running.
@@ -624,7 +620,7 @@ forever."
             (elfeed-web-ng--serve-static path request))))))))
 
 (defun httpd/favicon.ico (proc &rest _)
-  "Redirect /favicon.ico to /elfeed/favicon.ico."
+  "Redirect /favicon.ico to the app icon, /elfeed/icons/favicon_dark.svg."
   (httpd-redirect proc "/elfeed/icons/favicon_dark.svg"))
 
 

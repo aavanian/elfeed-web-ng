@@ -71,6 +71,23 @@ Add `elfeed-web-ng` to your `load-path` and configure:
 
 **Note:** `elfeed-web-ng-stop` stops the underlying simple-httpd server, which is shared across all packages that use it (e.g., impatient-mode, skewer-mode). If you need to keep simple-httpd running for other packages, set `elfeed-web-ng-enabled` to `nil` instead.
 
+**Note:** tag changes made in the web interface, such as marking entries read,
+show up at once in an open `*elfeed-search*` buffer, but, as with changes made in
+Emacs, they reach disk only when Elfeed saves its database (on exit, or when the
+search buffer is quit). To save them sooner, for example after a few idle
+minutes:
+
+```elisp
+(defvar my/elfeed-save-timer nil)
+(defun my/elfeed-save-soon (&rest _)
+  (when my/elfeed-save-timer (cancel-timer my/elfeed-save-timer))
+  (setq my/elfeed-save-timer (run-with-idle-timer 180 nil #'elfeed-db-save)))
+(add-hook 'elfeed-tag-hook #'my/elfeed-save-soon)
+(add-hook 'elfeed-untag-hook #'my/elfeed-save-soon)
+```
+
+Before Elfeed 4.0 the hooks are named `elfeed-tag-hooks` and `elfeed-untag-hooks`.
+
 ### Security
 
 This interface has **no authentication** — it assumes it is served on a private

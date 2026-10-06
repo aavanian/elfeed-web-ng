@@ -86,7 +86,6 @@ export default defineConfig({
   server: {
     proxy: {
       '/elfeed/api': 'http://localhost:8082',
-      '/elfeed/things': 'http://localhost:8082',
       '/elfeed/content': 'http://localhost:8082',
       '/elfeed/search': 'http://localhost:8082',
       '/elfeed/tags': 'http://localhost:8082',
