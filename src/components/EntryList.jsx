@@ -58,15 +58,8 @@ function SwipeableEntryItem({ entry, isSelected, onSelect }) {
 
     if (dx < -SWIPE_THRESHOLD) {
       touch.current.done = true;
-      const tags = entry.tags ?? [];
-      const add = isUnread ? [] : ['unread'];
-      const remove = isUnread ? ['unread'] : [];
       try {
-        await api.updateTags(add, remove, [entry.webid]);
-        const newTags = isUnread
-          ? tags.filter(t => t !== 'unread')
-          : [...tags, 'unread'];
-        store.replaceEntry({ ...entry, tags: newTags });
+        store.replaceEntry(await api.toggleTag(entry, 'unread'));
       } catch (_) {
         // Flash the tray red briefly so the user sees the action failed.
         setSnapping(false);
@@ -135,7 +128,7 @@ export function EntryList({ onSelect, onSearch }) {
     setMarkAllError(null);
     try {
       await api.markAllRead();
-      onSearch(store.query.value);
+      await onSearch(store.query.value);
     } catch {
       setMarkAllError('Failed to mark all read.');
     } finally {

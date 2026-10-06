@@ -23,3 +23,24 @@ test('replaceEntry leaves the list alone for an unknown webid', () => {
 
   assert.deepEqual(store.entries.value, [a]);
 });
+
+test('replaceEntry refreshes the open entry it replaces', () => {
+  const a = { webid: 'a', tags: ['unread'] };
+  store.entries.value = [a];
+  store.selectedEntry.value = a;
+
+  store.replaceEntry({ webid: 'a', tags: [] });
+
+  assert.deepEqual(store.selectedEntry.value, { webid: 'a', tags: [] });
+});
+
+test('replaceEntry leaves another open entry alone', () => {
+  const a = { webid: 'a', tags: [] };
+  const b = { webid: 'b', tags: [] };
+  store.entries.value = [a, b];
+  store.selectedEntry.value = b;
+
+  store.replaceEntry({ webid: 'a', tags: ['later'] });
+
+  assert.equal(store.selectedEntry.value, b);
+});

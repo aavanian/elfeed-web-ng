@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import * as api from "../lib/api";
 import * as store from "../lib/store";
 import { formatDate } from "../lib/format";
 import { TagActions } from "./TagActions";
 import { AnnotationEditor } from "./AnnotationEditor";
 
+// The referrer policy keeps the hosts of feed images and embeds from
+// learning the reader's private address through the Referer header.
 const CONTENT_STYLE = `
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
   <style>
     body { background: #fdf6e3; color: #657b83; overflow-x: hidden; word-break: break-word; }
     a { color: #268bd2; }
@@ -64,32 +67,28 @@ function rewriteLinks(html) {
 }
 
 export function EntryContent({ entry, onBack }) {
-  const contentUrl = entry.content ? api.getContentUrl(entry.content) : null;
+  const ref = entry.content;
   const [srcdoc, setSrcdoc] = useState(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    if (!contentUrl) {
-      setSrcdoc(null);
-      return;
-    }
+    // Back to the placeholder while the next entry loads, so its frame is
+    // mounted afresh rather than navigated (see the iframe note below).
+    setSrcdoc(null);
+    setFailed(false);
+    if (!ref) return;
     let cancelled = false;
-    fetch(contentUrl)
-      .then((res) => res.text())
+    api.getContent(ref)
       .then((html) => {
         if (!cancelled) setSrcdoc(CONTENT_STYLE + rewriteLinks(html));
       })
       .catch(() => {
-        if (!cancelled) setSrcdoc(CONTENT_STYLE);
+        if (!cancelled) setFailed(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [contentUrl]);
-
-  const handleEntryUpdated = useCallback((updatedEntry) => {
-    store.replaceEntry(updatedEntry);
-    store.selectedEntry.value = updatedEntry;
-  }, []);
+  }, [ref]);
 
   return (
     <article>
@@ -111,12 +110,14 @@ export function EntryContent({ entry, onBack }) {
       </div>
 
       <div class="entry-actions">
-        <TagActions entry={entry} onTagsChanged={handleEntryUpdated} />
-        <AnnotationEditor entry={entry} onAnnotationChanged={handleEntryUpdated} />
+        <TagActions entry={entry} onTagsChanged={store.replaceEntry} />
+        <AnnotationEditor entry={entry} onAnnotationChanged={store.replaceEntry} />
       </div>
 
-      {!contentUrl ? (
+      {!ref ? (
         <p class="secondary">No content available.</p>
+      ) : failed ? (
+        <p class="error-inline" role="alert">Could not load content.</p>
       ) : srcdoc === null ? (
         // Wait for the content before mounting the iframe: swapping srcdoc on a
         // live iframe counts as a navigation and pushes a phantom session-history

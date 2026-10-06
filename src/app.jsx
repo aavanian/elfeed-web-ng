@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useCallback, useRef, useState } from 'preact/hooks';
 import * as api from './lib/api';
 import * as store from './lib/store';
+import { runSearch } from './lib/search';
 import { SavedSearches } from './components/SavedSearches';
 import { SearchBar } from './components/SearchBar';
 import { EntryList } from './components/EntryList';
@@ -18,6 +19,9 @@ export function App() {
   // actual scroll happens in a layout effect, once the list-pane is back in the
   // layout (on mobile it was display:none while the entry was open).
   const pendingRestore = useRef(false);
+  // Set while a search pops the history state of the entry it closed, so
+  // that popstate is not taken for a Back press.
+  const poppingForSearch = useRef(false);
   const [showBuild, setShowBuild] = useState(false);
 
   useEffect(() => {
@@ -29,13 +33,7 @@ export function App() {
 
         const initialQuery = searches.length > 0 ? searches[0].filter : '@3-days-old';
         store.query.value = initialQuery;
-
-        store.loading.value = true;
-        try {
-          store.entries.value = await api.search(initialQuery);
-        } finally {
-          store.loading.value = false;
-        }
+        await runSearch(initialQuery);
       } catch {
         store.error.value = 'Could not reach Elfeed backend.';
       }
@@ -43,22 +41,22 @@ export function App() {
   }, []);
 
   const doSearch = useCallback(async (q) => {
-    store.loading.value = true;
-    try {
-      const results = await api.search(q);
-      store.entries.value = results;
-      store.error.value = null;
+    if (await runSearch(q)) {
       // Fresh results: start at the top rather than a stale offset.
       savedScrollY = 0;
       window.scrollTo(0, 0);
-    } finally {
-      store.loading.value = false;
     }
   }, []);
 
   const onSearch = useCallback(async (q) => {
     store.query.value = q;
-    store.selectedEntry.value = null;
+    if (store.selectedEntry.value) {
+      // Opening the entry pushed a history state; drop it along with the
+      // entry, or the next Back press would land on it and do nothing.
+      store.selectedEntry.value = null;
+      poppingForSearch.current = true;
+      history.back();
+    }
     await doSearch(q);
   }, [doSearch]);
 
@@ -82,6 +80,10 @@ export function App() {
     if (prevRestoration !== null) history.scrollRestoration = 'manual';
 
     const onPop = () => {
+      if (poppingForSearch.current) {
+        poppingForSearch.current = false;
+        return;
+      }
       if (store.selectedEntry.value) {
         pendingRestore.current = true;
         store.selectedEntry.value = null;
@@ -131,6 +133,8 @@ export function App() {
       await api.feedUpdate();
       await api.feedUpdateDone();
       await doSearch(store.query.value);
+    } catch {
+      store.error.value = 'Feed update failed.';
     } finally {
       store.updating.value = false;
     }
