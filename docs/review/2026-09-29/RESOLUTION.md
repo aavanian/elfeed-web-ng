@@ -16,18 +16,18 @@ subject, since hashes change when a branch is rebased.
 | TST-008 | `fix(search): keep the result limit out of the client's reach` |
 | SEC-001 | `fix(security): require the Origin to be the server's own origin`. Deviation: loopback names stay in the Host allowlist for a non-loopback bind. The same-origin rule already keeps other local services out, and keeping them preserves SSH-tunnel access. |
 | SEC-002 | `docs(security): say the allowlist covers /elfeed/ only` (documentation only, by owner decision: a global filter would also apply to other packages' servlets) |
-| SEC-003 | server: `fix(privacy): send Referrer-Policy: no-referrer with the app and content`; client: planned, frontend-fixes |
+| SEC-003 | server: `fix(privacy): send Referrer-Policy: no-referrer with the app and content`; client: `fix(privacy): forbid a Referer from inside the reader frame` (WebKit leaked it, Chromium did not) |
 | SEC-004 | `fix(security): validate request bodies before acting on them` |
 | SEC-005 | `fix(search): keep the result limit out of the client's reach` |
 | ORG-001 | `refactor(api): stop negotiating features that are always present` |
-| ORG-002 | planned: frontend-fixes |
+| ORG-002 | `refactor(tags): toggle a tag through one shared helper` |
 | ORG-003 | planned: css-cleanup |
 | ORG-004 | `refactor(api): drop the endpoints no client calls` |
 | ORG-005 | planned: docs-and-packaging |
 | ORG-006 | `fix(tags): answer malformed tag requests with 4xx instead of 500` |
 | ORG-007 | planned: css-cleanup |
 | ORG-008 | `refactor(content): leave entry content styling to the reader` |
-| ORG-009 | planned: frontend-fixes |
+| ORG-009 | `refactor(sw): let API requests bypass the service worker` |
 | ORG-010 | planned: css-cleanup |
 | DOC-001 | planned: docs-and-packaging |
 | DOC-002 | `docs(api): give every endpoint its method in the Commentary` |
@@ -44,14 +44,14 @@ subject, since hashes change when a branch is rebased.
 | PKG-003 | `chore(package): complete the library header and pin the version` |
 | PKG-004 | planned: docs-and-packaging |
 | PKG-005 | `chore(package): complete the library header and pin the version` |
-| GEN-001 | planned: frontend-fixes |
-| GEN-002 | planned: frontend-fixes |
-| GEN-003 | planned: frontend-fixes |
-| GEN-004 | planned: frontend-fixes |
+| GEN-001 | `fix(search): show the latest search, and say when a search fails` |
+| GEN-002 | `fix(search): show the latest search, and say when a search fails`, `fix(ui): report failed feed updates, and await the mark-all-read refresh` |
+| GEN-003 | `fix(reader): keep the open entry in step with swipes in the list` |
+| GEN-004 | `fix(navigation): drop the entry's history state when a search closes it` |
 | GEN-005 | `feat(emacs): show web tag changes in the open search buffer`. Saving is left to Elfeed and the user's hooks by owner decision; the README explains it. |
 | GEN-006 | `fix(feed-update): answer long polls parked during an Emacs-side update` |
 | GEN-007 | Superseded: the `/elfeed/things` endpoint was removed (`refactor(api): drop the endpoints no client calls`) |
-| GEN-008 | planned: frontend-fixes |
+| GEN-008 | `fix(reader): say so when an entry's content fails to load` |
 
 TST-005: the `init()` cases of `api.js` were added with ORG-001, which changed
 how `init()` treats a failed `/elfeed/api`.
