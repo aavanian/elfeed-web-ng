@@ -291,8 +291,12 @@ header h1 {
   background: var(--pico-card-background-color);
 }
 
+/* The tint is translucent: layer it over the opaque base so the row keeps
+   hiding the swipe tray beneath it. */
 .entry-item[aria-selected="true"] .entry-item-inner {
-  background: var(--pico-primary-focus);
+  background:
+    linear-gradient(var(--pico-primary-focus), var(--pico-primary-focus)),
+    var(--pico-background-color);
 }
 
 .entry-item.unread .entry-title {
