@@ -21,14 +21,14 @@ subject, since hashes change when a branch is rebased.
 | SEC-005 | `fix(search): keep the result limit out of the client's reach` |
 | ORG-001 | `refactor(api): stop negotiating features that are always present` |
 | ORG-002 | `refactor(tags): toggle a tag through one shared helper` |
-| ORG-003 | planned: css-cleanup |
+| ORG-003 | Kept by owner decision, for a planned theme toggle: `style(theme): explain why the explicit dark palette is kept`. light-dark() would merge the copies, but browsers without it (Safari before 17.5) would lose every colour. |
 | ORG-004 | `refactor(api): drop the endpoints no client calls` |
 | ORG-005 | planned: docs-and-packaging |
 | ORG-006 | `fix(tags): answer malformed tag requests with 4xx instead of 500` |
-| ORG-007 | planned: css-cleanup |
+| ORG-007 | `refactor(layout): express the selection state with one class` |
 | ORG-008 | `refactor(content): leave entry content styling to the reader` |
 | ORG-009 | `refactor(sw): let API requests bypass the service worker` |
-| ORG-010 | planned: css-cleanup |
+| ORG-010 | `style(entry-actions): drop margins that were always overridden` |
 | DOC-001 | planned: docs-and-packaging |
 | DOC-002 | `docs(api): give every endpoint its method in the Commentary` |
 | DOC-003 | `fix(security): require the Origin to be the server's own origin` (code fixed to match the docs) |
