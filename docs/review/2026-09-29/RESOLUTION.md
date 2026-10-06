@@ -23,26 +23,26 @@ subject, since hashes change when a branch is rebased.
 | ORG-002 | `refactor(tags): toggle a tag through one shared helper` |
 | ORG-003 | Kept by owner decision, for a planned theme toggle: `style(theme): explain why the explicit dark palette is kept`. light-dark() would merge the copies, but browsers without it (Safari before 17.5) would lose every colour. |
 | ORG-004 | `refactor(api): drop the endpoints no client calls` |
-| ORG-005 | planned: docs-and-packaging |
+| ORG-005 | `chore(repo): drop the legacy/ frontend` |
 | ORG-006 | `fix(tags): answer malformed tag requests with 4xx instead of 500` |
 | ORG-007 | `refactor(layout): express the selection state with one class` |
 | ORG-008 | `refactor(content): leave entry content styling to the reader` |
 | ORG-009 | `refactor(sw): let API requests bypass the service worker` |
 | ORG-010 | `style(entry-actions): drop margins that were always overridden` |
-| DOC-001 | planned: docs-and-packaging |
+| DOC-001 | `docs(readme): say how to start the server and where to find it` |
 | DOC-002 | `docs(api): give every endpoint its method in the Commentary` |
 | DOC-003 | `fix(security): require the Origin to be the server's own origin` (code fixed to match the docs) |
 | DOC-004 | `docs(api): give every endpoint its method in the Commentary` |
-| DOC-005 | planned: docs-and-packaging |
-| DOC-006 | planned: docs-and-packaging |
-| DOC-007 | planned: docs-and-packaging |
-| DOC-008 | planned: docs-and-packaging |
+| DOC-005 | `docs(readme): list the features the UI actually has` |
+| DOC-006 | `docs(readme): describe what merge=ours actually keeps` |
+| DOC-007 | `docs(discoveries): use current identifiers, and record new lessons` |
+| DOC-008 | `fix(dev): make the dev proxy target configurable and pass the origin check` (also fixes the dev-proxy breakage SEC-001 introduced) |
 | DOC-009 | `test(tooling): add check.sh as the single test entry point` |
-| DOC-010 | planned: docs-and-packaging |
+| DOC-010 | `docs: separate historical records and give docs/ an entry point` |
 | PKG-001 | `build(check): fail when the committed web/ bundle is stale` |
 | PKG-002 | Won't fix: Emacs 29.2 is the project's deliberate support floor, not a technical requirement of the code. |
 | PKG-003 | `chore(package): complete the library header and pin the version` |
-| PKG-004 | planned: docs-and-packaging |
+| PKG-004 | `chore(package): declare the license and require pnpm 12` (devEngines rather than packageManager/Corepack; pnpm 12 enforces it and does not enforce engines.pnpm) |
 | PKG-005 | `chore(package): complete the library header and pin the version` |
 | GEN-001 | `fix(search): show the latest search, and say when a search fails` |
 | GEN-002 | `fix(search): show the latest search, and say when a search fails`, `fix(ui): report failed feed updates, and await the mark-all-read refresh` |

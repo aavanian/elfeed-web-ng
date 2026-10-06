@@ -14,6 +14,14 @@ const stamps = process.env.ELFEED_BUILD_STAMPS
 
 const buildId = stamps?.buildId ?? Date.now().toString(36);
 
+// The Emacs server the dev server forwards API calls to. Set ELFEED_BACKEND
+// to match `httpd-host' and `httpd-port' when they differ from the default.
+const backend = process.env.ELFEED_BACKEND ?? 'http://localhost:8082';
+const apiPaths = [
+  'api', 'content', 'search', 'tags', 'feed-update', 'feed-update-done',
+  'mark-all-read', 'saved-searches', 'annotation',
+];
+
 // Describe the checkout the bundle was built from. Failures are expected (a
 // tarball install has no git), and the placeholder keeps the readout honest.
 function gitInfo() {
@@ -84,16 +92,13 @@ export default defineConfig({
     },
   },
   server: {
-    proxy: {
-      '/elfeed/api': 'http://localhost:8082',
-      '/elfeed/content': 'http://localhost:8082',
-      '/elfeed/search': 'http://localhost:8082',
-      '/elfeed/tags': 'http://localhost:8082',
-      '/elfeed/feed-update': 'http://localhost:8082',
-      '/elfeed/feed-update-done': 'http://localhost:8082',
-      '/elfeed/mark-all-read': 'http://localhost:8082',
-      '/elfeed/saved-searches': 'http://localhost:8082',
-      '/elfeed/annotation': 'http://localhost:8082',
-    },
+    // changeOrigin sends the backend's own address as Host, so the backend's
+    // allowlist sees its own name. The backend accepts an Origin only when it
+    // names that same server, so Origin is rewritten to match.
+    proxy: Object.fromEntries(apiPaths.map((p) => [`/elfeed/${p}`, {
+      target: backend,
+      changeOrigin: true,
+      headers: { origin: new URL(backend).origin },
+    }])),
   },
 });

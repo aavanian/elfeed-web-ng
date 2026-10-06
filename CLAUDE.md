@@ -4,14 +4,6 @@
 
 Use `pnpm` (not npm or yarn).
 
-## Build
+## Build, dev server and tests
 
-```sh
-pnpm build
-```
-
-## Dev Server
-
-```sh
-pnpm dev
-```
+See the Development section of README.md. Run `./check.sh` after every change.

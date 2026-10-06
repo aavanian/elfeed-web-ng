@@ -4,16 +4,22 @@ A modern web interface for [Elfeed](https://github.com/skeeto/elfeed), the Emacs
 
 ## Features
 
-- Mobile-friendly PWA (installable on iOS/Android)
-- Saved searches with quick-access buttons
-- Tag management (read/unread, star, later, custom tags)
+- Mobile-friendly PWA (installable on iOS/Android); the app itself still opens
+  offline, from its cache
+- Saved searches with quick-access buttons, and a free-form Elfeed filter
+- Read/unread, star (`★`) and "later" toggles on each entry; other tags are shown
+- Swipe an entry left in the list to toggle read/unread
+- "Update feeds" runs `elfeed-update` in Emacs and refreshes the list when it
+  finishes; "Mark all read" clears unread on every entry
 - Annotation support (requires [elfeed-curate](https://github.com/rnadler/elfeed-curate))
 - Responsive desktop/mobile layout
+- Build info panel, to check which build a device is running: long-press or
+  triple-tap the "Elfeed" title (right-click on desktop)
 
 ## Compatibility
 
 This interface requires the `elfeed-web-ng` Emacs backend; it is **no longer a
-drop-in replacement for the upstream [elfeed-web](https://github.com/skeeto/elfeed)
+drop-in replacement for the upstream [elfeed-web](https://github.com/emacs-elfeed/elfeed-web)
 server**. The "Update feeds" button drives an `elfeed-web-ng`-only feed-update
 endpoint that triggers `elfeed-update` server-side, which upstream elfeed-web
 does not provide.
@@ -61,12 +67,21 @@ Add `elfeed-web-ng` to your `load-path` and configure:
   
   so and binding the server to that variable. Then I can access the interface safely from my mobile device with a home-screen bookmark to "http://machine-name.tailnet-name.ts.net:8082/elfeed" 
 
+### Usage
+
+Start the server with `M-x elfeed-web-ng-start` (or call `(elfeed-web-ng-start)`
+in your configuration), then open `http://<httpd-host>:<httpd-port>/elfeed/` in a
+browser: with the example above, <http://127.0.0.1:8082/elfeed/>. On a phone, add
+the page to the home screen to use it as an app. `M-x elfeed-web-ng-stop` stops
+the server.
+
 ### Configuration
 
+- `elfeed-web-ng-enabled` — whether the interface answers requests; `elfeed-web-ng-start` sets it and `elfeed-web-ng-stop` clears it (default: `nil`)
 - `elfeed-web-ng-saved-searches` — list of saved searches displayed as quick-access buttons
 - `elfeed-web-ng-limit` — maximum entries per search (default: 512)
 - `httpd-host` / `httpd-port` — server binding (from simple-httpd)
-- `elfeed-web-ng-allowed-hosts` — hostnames permitted in the `Host`/`Origin` headers (default: derived)
+- `elfeed-web-ng-allowed-hosts` — hostnames permitted in the `Host` header (default: derived, see Security)
 - `elfeed-web-ng-allow-public-bind` — silence the all-interfaces bind warning (default: `nil`)
 
 **Note:** `elfeed-web-ng-stop` stops the underlying simple-httpd server, which is shared across all packages that use it (e.g., impatient-mode, skewer-mode). If you need to keep simple-httpd running for other packages, set `elfeed-web-ng-enabled` to `nil` instead.
@@ -136,13 +151,25 @@ proxy).
 
 The frontend is built with Preact + Vite. Pre-built files are in `web/` so users never need Node.js.
 
-To develop the frontend:
+To develop the frontend you need [pnpm](https://pnpm.io) 12 or later; `package.json`
+declares this, and pnpm and npm refuse to install with anything else:
 
 ```sh
 pnpm install
 pnpm run dev    # Vite dev server with HMR, proxying to Emacs backend
 pnpm run build  # Production build to web/
 ```
+
+The dev server forwards API calls to `http://localhost:8082`. If Emacs listens
+elsewhere, for example on a tailnet address, point it there:
+
+```sh
+ELFEED_BACKEND=http://100.64.0.1:8082 pnpm run dev
+```
+
+The proxy addresses Emacs by that URL, rewriting the `Host` and `Origin` headers
+to match, so the requests pass the allowlist and the same-origin check without
+extra configuration in Emacs.
 
 ### Tests
 
@@ -167,16 +194,39 @@ emacs --batch -L "$ELFEED_DIR" -L "$HTTPD_DIR" -L . \
 
 ### Merging / Rebasing
 
-Since the built files are under version control, most merge or rebase will lead to conflict on those. The `.gitattributes` file is set to ignore the conflict and take the newer files in any case. They will be stale and will need a rebuild which should then be committed (ideally squashing that build commit with the merge commit if any or one of the merged/rebased commits. You will need something like `git config --global merge.ours.driver true` in your config for the `.gitattributes` config to work.
+The built files under `web/` are committed, so merges and rebases often conflict
+on them. `.gitattributes` gives `web/**` the `merge=ours` rule, which settles
+such conflicts by keeping the current branch's `web/`. During a rebase the
+current branch is the one being rebased onto, so the replayed commits' builds
+are the ones dropped. Either way the result may not match `src/`: rebuild with
+`pnpm build` and commit `web/` afterwards, ideally folded into the merge commit
+or the last rebased commit. `./check.sh` fails until the bundle matches.
+
+The rule needs the `ours` merge driver, which Git does not define by default:
+
+```sh
+git config --global merge.ours.driver true
+```
+
+Without it, the conflicts under `web/` are left for you as usual.
+
+## Further reading
+
+- [docs/DISCOVERIES.md](docs/DISCOVERIES.md): lessons learned and non-obvious
+  gotchas, for anyone working on the code
+- [docs/review/](docs/review/): full repository reviews, each with a
+  `RESOLUTION.md` recording how every finding was resolved
+- [docs/history/](docs/history/): dated records that describe past states of
+  the code
 
 ## Ideas
 
 - **Keyboard navigation** — arrow keys to move between entries, enter to open, escape to go back
-- **Offline support** — cache app shell and pre-load entry content so the page works without network, syncing tag changes when back online
+- **Offline reading** — pre-load entry content so entries can be read without network, and queue tag changes until the server is back (the app shell is already cached)
 
 ## Credits
 
-This project is a fork of the `web` sub-package from [elfeed-web](https://github.com/skeeto/elfeed) by Christopher Wellons, originally released under the [Unlicense](https://unlicense.org/) (public domain). The original frontend files are preserved in the `legacy/` directory for reference.
+This project is a fork of the `web` sub-package of [Elfeed](https://github.com/skeeto/elfeed) by Christopher Wellons, now maintained separately as [elfeed-web](https://github.com/emacs-elfeed/elfeed-web), originally released under the [Unlicense](https://unlicense.org/) (public domain). The original frontend is kept in this repository at the [`legacy-compat`](https://github.com/aavanian/elfeed-web-ng/tree/legacy-compat/legacy) tag.
 
 ## License
 

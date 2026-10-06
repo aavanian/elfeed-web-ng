@@ -50,7 +50,11 @@
 (declare-function elfeed-curate-set-entry-annotation "ext:elfeed-curate" (entry annotation))
 
 (defcustom elfeed-web-ng-enabled nil
-  "If true, serve a web interface Elfeed with simple-httpd."
+  "If true, serve the Elfeed web interface with simple-httpd.
+`elfeed-web-ng-start' sets this and starts the server;
+`elfeed-web-ng-stop' clears it and stops the server.  Setting it to nil
+yourself disables the interface but leaves the shared simple-httpd
+server running for other packages."
   :group 'elfeed
   :type 'boolean)
 

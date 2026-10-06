@@ -2,6 +2,14 @@
   "name": "elfeed-web-ng",
   "version": "1.0.0",
   "private": true,
+  "license": "AGPL-3.0-or-later",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": ">=12",
+      "onFail": "error"
+    }
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
