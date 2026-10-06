@@ -182,7 +182,21 @@ emacs --batch -L "$ELFEED_DIR" -L "$HTTPD_DIR" -L . \
 
 ### Merging / Rebasing
 
-Since the built files are under version control, most merge or rebase will lead to conflict on those. The `.gitattributes` file is set to ignore the conflict and take the newer files in any case. They will be stale and will need a rebuild which should then be committed (ideally squashing that build commit with the merge commit if any or one of the merged/rebased commits. You will need something like `git config --global merge.ours.driver true` in your config for the `.gitattributes` config to work.
+The built files under `web/` are committed, so merges and rebases often conflict
+on them. `.gitattributes` gives `web/**` the `merge=ours` rule, which settles
+such conflicts by keeping the current branch's `web/`. During a rebase the
+current branch is the one being rebased onto, so the replayed commits' builds
+are the ones dropped. Either way the result may not match `src/`: rebuild with
+`pnpm build` and commit `web/` afterwards, ideally folded into the merge commit
+or the last rebased commit. `./check.sh` fails until the bundle matches.
+
+The rule needs the `ours` merge driver, which Git does not define by default:
+
+```sh
+git config --global merge.ours.driver true
+```
+
+Without it, the conflicts under `web/` are left for you as usual.
 
 ## Ideas
 
